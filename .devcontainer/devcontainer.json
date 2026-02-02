@@ -1,0 +1,32 @@
+{
+  "name": "Ubuntu DevContainer",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "SUPERUSER": "superuser",
+      "PASSWORD": "secret_password"
+    }
+  },
+  // Mount working folder
+  "workspaceMount": "source=${localWorkspaceFolder}/src,target=/workspaces/app,type=bind",
+  "workspaceFolder": "/workspaces/app",
+  // Define remote-user (superuser for devcontainer)
+  "remoteUser": "superuser",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "ms-vscode.makefile-tools"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "postCreateCommand": "echo 'Dev container ready'",
+  "containerEnv": {
+    "LANG": "en_US.UTF-8",
+    "LC_ALL": "en_US.UTF-8"
+  }
+}
