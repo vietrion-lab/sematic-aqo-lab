@@ -1,32 +1,18 @@
-# Semantic AQO PostgreSQL Extension
 
-A PostgreSQL extension that implements Semantic Adaptive Query Optimization (AQO) to enhance database query performance through intelligent optimization strategies.
+# semantic-aqo-lab
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Development Setup](#development-setup)
-- [Project Structure](#project-structure)
-- [Building the Extension](#building-the-extension)
-- [Container Management Aliases](#container-management-aliases)
-- [Development Workflow](#development-workflow)
-- [Testing](#testing)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
+semantic-aqo-lab is the development repository and environment for building and testing the Semantic Adaptive Query Optimization (AQO) PostgreSQL extension. It provides a Docker-based workflow, debugging tools, and helper scripts to speed up extension development.
 
 ## Overview
 
-Semantic AQO is a PostgreSQL extension designed to optimize query execution by learning from query patterns and adapting optimization strategies based on semantic understanding of the data and workload.
+Semantic AQO is a PostgreSQL extension designed to optimize query execution by learning from query patterns and adapting optimization strategies based on semantic understanding of the data and workload. This repo focuses on local development, testing, and iteration.
 
 ## Features
 
 - Adaptive Query Optimization based on semantic analysis
 - Integration with PostgreSQL 16
 - Hot-reload capability for rapid development
-- Comprehensive debugging support with GDB
+- Debugging support with GDB
 - Supervisor-based process management
 - Docker-based development environment
 
@@ -39,32 +25,32 @@ Semantic AQO is a PostgreSQL extension designed to optimize query execution by l
 
 ## Quick Start
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repository-url>
-   cd semantic-aqo
-   ```
+1. Clone the repository:
+	```bash
+	git clone <repository-url>
+	cd semantic-aqo-lab
+	```
 
-2. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your preferences
-   ```
+2. Configure environment:
+	```bash
+	cp .env.example .env
+	# Edit .env with your preferences
+	```
 
-3. **Start the development environment:**
-   ```bash
-   docker compose -f docker-compose-dev.yml up -d
-   ```
+3. Start the development environment:
+	```bash
+	docker compose -f docker-compose-dev.yml up -d
+	```
 
-4. **Connect to PostgreSQL:**
-   ```bash
-   ./scripts/psql.sh
-   ```
+4. Connect to PostgreSQL:
+	```bash
+	./scripts/psql.sh
+	```
 
-5. **Enable the extension:**
-   ```sql
-   CREATE EXTENSION semantic_aqo;
-   ```
+5. Enable the extension:
+	```sql
+	CREATE EXTENSION semantic_aqo;
+	```
 
 ## Development Setup
 
@@ -82,8 +68,8 @@ DOCKERHUB_USERNAME=your_dockerhub_username
 
 ### Docker Compose Profiles
 
-- **Development:** `docker-compose-dev.yml` - Includes debugging tools, volume mounts for live editing
-- **Production:** `docker-compose-prod.yml` - Optimized for deployment
+- Development: `docker-compose-dev.yml` - Includes debugging tools, volume mounts for live editing
+- Production: `docker-compose-prod.yml` - Optimized for deployment
 
 ## Project Structure
 
@@ -100,6 +86,10 @@ DOCKERHUB_USERNAME=your_dockerhub_username
 ├── docker-compose-dev.yml          # Development environment config
 ├── docker-compose-prod.yml         # Production environment config
 ├── scripts                         # Helper scripts
+│   ├── 00-system-setup.sh          # Install base dependencies for local/WSL dev
+│   ├── 01-postgres-clone-and-build.sh # Clone and build PostgreSQL source
+│   ├── 02-semantic-aqo-clone-and-build.sh # Clone and build Semantic AQO source
+│   ├── setup-all.sh                # Run all setup steps in order
 │   ├── build.sh                    # Build and push artifact image
 │   ├── psql.sh                     # Connect to PostgreSQL shell
 │   └── restart.sh                  # Rebuild and restart extension
@@ -129,47 +119,11 @@ DOCKERHUB_USERNAME=your_dockerhub_username
 │           ├── utils.c             # General utility functions
 │           └── utils.h             # Utils header file
 └── tools                           # Development and testing tools
-    ├── benchmarks                  # Performance benchmarking
-    │   ├── analysis                # Benchmark analysis tools
-    │   ├── synthetic               # Synthetic workload generators
-    │   └── tpch                    # TPC-H benchmark suite
-    └── monitoring                  # Monitoring and observability tools
-```
-## Architecture
-```mermaid
-graph TD
-    A[User: Send SQL Command] --> B(Postgres Core: Parser);
-    B --> C{Hook: planner_hook};
-    
-    subgraph "Phase 1: Planning"
-        C -- "Semantic-AQO Off" --> D[Postgres Core: Standard Planner];
-        C -- "Semantic-AQO On" --> E(Postgres Core: Start Optimization);
-        
-        E --> F{Hook: cardinality_hooks};
-        F -- "Call hook e.g. set_baserel_rows" --> G[Semantic-AQO: Feature Extractor];
-             
-        G -- "Extract semantic features" --> H[Semantic-AQO: Model API];
-        H -- "Call model .bin file in Shmem" --> I[Semantic-AQO: Return Prediction];
-        
-        I -- "Override rel->rows" --> F;
-        F -- "Complete estimation" --> J(Postgres Core: Choose Optimal Plan);
-        J --> K[Postgres Core: Create Execution Plan];
-    end
-
-    subgraph "Phase 2: Execution"
-        D --> K;
-        K --> L(Postgres Core: ExecutorStart);
-        L -- "If learn_aqo=true Enable INSTRUMENT_ROWS" --> M(Postgres Core: Execute Query);
-        M --> N[Output: Return Results to User];
-    end
-
-    subgraph "Phase 3: Learning"
-        M --> O{Hook: ExecutorEnd_hook};
-        O -- "No Learning" --> N;
-        O -- "If learn_aqo=true" --> P[Semantic-AQO: Collect Actual Rows];
-        P --> Q[Semantic-AQO: Storage Manager];
-        Q -- "Save features and actual_rows to PG tables" --> N;
-    end
+	 ├── benchmarks                  # Performance benchmarking
+	 │   ├── analysis                # Benchmark analysis tools
+	 │   ├── synthetic               # Synthetic workload generators
+	 │   └── tpch                    # TPC-H benchmark suite
+	 └── monitoring                  # Monitoring and observability tools
 ```
 
 ## Building the Extension
@@ -201,58 +155,6 @@ Use the provided script to rebuild and restart:
 ./scripts/restart.sh
 ```
 
-## Container Management Aliases
-
-The development container includes several convenient bash aliases for managing PostgreSQL and the extension:
-
-### Supervisor Control
-
-- **`superctl`** - Base supervisorctl command with config path
-  ```bash
-  superctl status
-  ```
-
-### PostgreSQL Management
-
-- **`pg-status`** - Check PostgreSQL service status
-  ```bash
-  pg-status
-  ```
-
-- **`pg-start`** - Start PostgreSQL service
-  ```bash
-  pg-start
-  ```
-
-- **`pg-stop`** - Stop PostgreSQL service
-  ```bash
-  pg-stop
-  ```
-
-- **`pg-restart`** - Restart PostgreSQL service
-  ```bash
-  pg-restart
-  ```
-
-- **`pg-allow-all`** - Configure pg_hba.conf to allow all connections (dev only)
-  ```bash
-  pg-allow-all
-  ```
-  > **Warning:** Only use in development environments. This allows unrestricted access.
-
-### Using the Aliases
-
-1. **Exec into the container:**
-   ```bash
-   docker compose -f docker-compose-dev.yml exec postgres bash
-   ```
-
-2. **Use any alias:**
-   ```bash
-   pg-status
-   pg-restart
-   ```
-
 ## Development Workflow
 
 ### 1. Make Code Changes
@@ -261,18 +163,14 @@ Edit files in `src/semantic-aqo/` on your host machine. Changes are immediately 
 
 ### 2. Rebuild and Reload
 
-**Option A: Using the restart script (from host):**
+Option A: Using the restart script (from host):
+
 ```bash
 ./scripts/restart.sh
 ```
 
-**Option B: Using the reload script (inside container):**
-```bash
-docker compose -f docker-compose-dev.yml exec postgres bash
-reload-extension.sh
-```
+Option B: Manual rebuild (inside container):
 
-**Option C: Manual rebuild (inside container):**
 ```bash
 docker compose -f docker-compose-dev.yml exec postgres bash
 cd /usr/src/semantic-aqo
@@ -282,146 +180,80 @@ make dev
 ### 3. Test Changes
 
 Connect to PostgreSQL and test your changes:
+
 ```bash
 ./scripts/psql.sh
 ```
 
 ```sql
--- Reload the extension
 DROP EXTENSION IF EXISTS semantic_aqo CASCADE;
 CREATE EXTENSION semantic_aqo;
-
--- Test your functions
-SELECT * FROM your_test_function();
-```
-## Debugging
-
-The development container includes GDB with pretty-printing support:
-
-### Attach GDB to PostgreSQL
-
-```bash
-docker compose -f docker-compose-dev.yml exec postgres bash
-# Find the postgres backend PID
-ps aux | grep postgres
-# Attach GDB
-gdb -p <PID>
 ```
 
-### GDB Configuration
+## Scripts Reference
 
-Pre-configured `.gdbinit` includes:
-- `set pagination off`
-- `set print pretty on`
-- `set print array-indexes on`
-- `break elog` - Break on PostgreSQL errors
+All helper scripts are located in the `scripts/` directory.
 
-### Verify Debug Symbols
+### scripts/00-system-setup.sh
 
-```bash
-cd /usr/src/semantic-aqo
-make debug-check
-```
+Installs baseline tooling and dependencies needed for local development (intended for Linux/WSL2).
+
+### scripts/01-postgres-clone-and-build.sh
+
+Clones the PostgreSQL source tree and builds it locally.
+
+### scripts/02-semantic-aqo-clone-and-build.sh
+
+Clones the Semantic AQO source and builds the extension against the local PostgreSQL build.
+
+### scripts/setup-all.sh
+
+Runs the full setup workflow (system setup, PostgreSQL build, and Semantic AQO build) in order.
+
+### scripts/psql.sh
+
+Connects to the PostgreSQL shell inside the container.
+
+### scripts/restart.sh
+
+Rebuilds the extension and restarts PostgreSQL.
+
+### scripts/build.sh
+
+Builds and pushes artifact image to Docker Hub.
 
 ## Troubleshooting
 
 ### Extension Not Loading
 
 1. Check PostgreSQL logs:
-   ```bash
-   docker compose -f docker-compose-dev.yml logs postgres
-   ```
+	```bash
+	docker compose -f docker-compose-dev.yml logs postgres
+	```
 
 2. Verify extension is installed:
-   ```bash
-   docker compose -f docker-compose-dev.yml exec postgres bash
-   ls /usr/lib/postgresql/16/lib/ | grep semantic_aqo
-   ```
+	```bash
+	docker compose -f docker-compose-dev.yml exec postgres bash
+	ls /usr/lib/postgresql/16/lib/ | grep semantic_aqo
+	```
 
 ### Connection Issues
 
 1. Ensure the container is healthy:
-   ```bash
-   docker compose -f docker-compose-dev.yml ps
-   ```
+	```bash
+	docker compose -f docker-compose-dev.yml ps
+	```
 
 2. Check if PostgreSQL is accepting connections:
-   ```bash
-   docker compose -f docker-compose-dev.yml exec postgres pg_isready
-   ```
-
-3. Update pg_hba.conf for external connections:
-   ```bash
-   docker compose -f docker-compose-dev.yml exec postgres bash
-   pg-allow-all
-   ```
-
-### Build Errors
-
-1. Clean and rebuild:
-   ```bash
-   docker compose -f docker-compose-dev.yml exec postgres bash
-   cd /usr/src/semantic-aqo
-   make clean
-   make
-   ```
-
-2. Check for compilation warnings:
-   ```bash
-   make 2>&1 | grep -i warning
-   ```
-
-### Container Won't Start
-
-1. Check Docker logs:
-   ```bash
-   docker compose -f docker-compose-dev.yml logs
-   ```
-
-2. Rebuild the container:
-   ```bash
-   docker compose -f docker-compose-dev.yml down
-   docker compose -f docker-compose-dev.yml build --no-cache
-   docker compose -f docker-compose-dev.yml up -d
-   ```
-
-## Scripts Reference
-
-All helper scripts are located in the `scripts/` directory.
-
-### scripts/psql.sh
-Connects to the PostgreSQL shell inside the container:
-```bash
-./scripts/psql.sh
-```
-
-### scripts/restart.sh
-Rebuilds the extension and restarts PostgreSQL:
-```bash
-./scripts/restart.sh
-```
-
-### scripts/build.sh
-Builds and pushes artifact image to Docker Hub:
-```bash
-./scripts/build.sh
-```
-
-## Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Test thoroughly using the regression tests
-4. Submit a pull request
+	```bash
+	docker compose -f docker-compose-dev.yml exec postgres pg_isready
+	```
 
 ## License
 
-[Specify your license here]
+Specify your license here.
 
 ## Contact
 
-[Your contact information or project maintainer details]
+Provide maintainer contact info here.
 
----
-
-**Note:** This extension is under active development. APIs and features may change between versions.
