@@ -90,6 +90,25 @@ echo "Step 11: Verifying installation..."
 RESULT=$(sudo -u postgres /usr/local/pgsql/bin/psql test -c "SELECT version();" 2>&1 || true)
 echo "$RESULT"
 
+# ===== Step 12: Add PostgreSQL binaries to PATH =====
+echo "Step 12: Adding PostgreSQL binaries to PATH..."
+
+# Line to add
+EXPORT_LINE='export PATH=/usr/local/pgsql/bin:$PATH'
+
+# Check if already in ~/.bashrc
+if grep -Fxq "$EXPORT_LINE" ~/.bashrc; then
+    echo "✅ PATH already configured in ~/.bashrc"
+else
+    echo "$EXPORT_LINE" >> ~/.bashrc
+    echo "✅ PATH added to ~/.bashrc"
+fi
+
+# Source ~/.bashrc so current session knows PATH (optional)
+source ~/.bashrc
+echo "✅ PATH updated for current session"
+echo "You can now run 'psql' without full path"
+
 echo ""
 echo "==== ✅ PostgreSQL $POSTGRES_VERSION Installation Complete ===="
 echo ""

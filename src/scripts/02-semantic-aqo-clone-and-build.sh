@@ -19,7 +19,7 @@ cd "$POSTGRES_DIR"
 
 # Clone AQO (only if not already cloned)
 if [[ ! -d contrib/aqo ]]; then
-	git clone -b "stable${POSTGRES_VERSION}" --single-branch https://github.com/postgrespro/aqo.git contrib/aqo
+	git clone -b "stable${POSTGRES_VERSION}" --single-branch https://github.com/vietrion-lab/semantic-aqo-main.git contrib/aqo
 fi
 
 # Apply AQO patch for the PostgreSQL version (skip if already applied)
