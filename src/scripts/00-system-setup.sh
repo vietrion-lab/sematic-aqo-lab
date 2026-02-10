@@ -13,6 +13,9 @@ sudo apt-get install -y \
     libreadline-dev \
     zlib1g-dev \
     bison \
-    flex
+    flex \
+    python3 \
+    python3-pip \
+    python3-venv
 
-echo "✅ System dependencies installed"
+echo "✅ System dependencies installed (including Python 3 + venv)"
