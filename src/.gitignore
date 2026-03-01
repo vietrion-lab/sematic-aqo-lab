@@ -7,3 +7,4 @@ venv/
 postgresql-*/
 postgresql-*.tar.gz
 
+semantic-aqo/

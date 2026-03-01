@@ -6,6 +6,7 @@ set -euo pipefail
 WORKSPACE_DIR=/workspaces/app
 POSTGRES_DIR=postgresql-15.15
 POSTGRES_VERSION=15
+BRANCH="feat/semantic-aqo-extension"
 
 cd "$WORKSPACE_DIR"
 
@@ -19,7 +20,7 @@ cd "$POSTGRES_DIR"
 
 # Clone AQO (only if not already cloned)
 if [[ ! -d contrib/aqo ]]; then
-	git clone -b "stable${POSTGRES_VERSION}" --single-branch https://github.com/vietrion-lab/semantic-aqo-main.git contrib/aqo
+	git clone -b "$BRANCH" --single-branch https://github.com/vietrion-lab/semantic-aqo
 fi
 
 # Apply AQO patch for the PostgreSQL version (skip if already applied)
