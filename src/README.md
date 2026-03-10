@@ -26,7 +26,7 @@ cat /usr/local/pgsql/data/logfile
 psql -U postgres -d postgres
 
 # Connect to a specific database
-psql -U postgres -d test
+/q/
 
 # Connect with host and port
 psql -h localhost -p 5432 -U postgres -d test

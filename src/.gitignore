@@ -5,5 +5,9 @@ venv/
 
 
 postgresql-*/
+# !postgresql-15.15/
+# !postgresql-15.15/contrib/
+# !postgresql-15.15/contrib/aqo/
+# !postgresql-15.15/contrib/aqo/**
 postgresql-*.tar.gz
 

@@ -1,0 +1,863 @@
+============================================
+  AQO Node Context Extractor - Test Script
+  Sun Mar  8 17:39:42 UTC 2026
+============================================
+
+[1/5] Recreating AQO extension with new schema...
+DROP EXTENSION
+CREATE EXTENSION
+  -> Extension recreated.
+
+[2/5] Creating test tables and sample data...
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 10000
+INSERT 0 500
+INSERT 0 50000
+INSERT 0 150000
+ANALYZE
+  -> Tables created: users(10K), products(500), orders(50K), order_items(150K).
+
+[3/5] Running test queries with NCE enabled...
+
+SET
+SET
+SET
+ aqo_node_context_reset 
+------------------------
+ 
+(1 row)
+
+--- [Single Table 1] users: age range + city filter ---
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on users  (cost=0.00..231.00 rows=1332 width=30) (actual time=0.004..0.404 rows=1333 loops=1)
+   Filter: ((age >= 40) AND (city = 'Hanoi'::text))
+   Rows Removed by Filter: 8667
+ Planning Time: 0.453 ms
+ Execution Time: 0.650 ms
+(5 rows)
+
+
+--- [Single Table 2] orders: status + amount range ---
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
+ Seq Scan on orders  (cost=0.00..1110.00 rows=5010 width=26) (actual time=0.005..2.423 rows=5013 loops=1)
+   Filter: ((total > '500'::numeric) AND (status = 'paid'::text))
+   Rows Removed by Filter: 44987
+ Planning Time: 0.075 ms
+ Execution Time: 2.555 ms
+(5 rows)
+
+
+--- [Single Table 3] products: category + price range ---
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Seq Scan on products  (cost=0.00..12.75 rows=30 width=28) (actual time=0.004..0.033 rows=37 loops=1)
+   Filter: ((price >= '50'::numeric) AND (price <= '200'::numeric) AND (category = 'Electronics'::text))
+   Rows Removed by Filter: 463
+ Planning Time: 0.097 ms
+ Execution Time: 0.089 ms
+(5 rows)
+
+
+--- [Single Table 4] users: tier + age (premium VIPs over 50) ---
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on users  (cost=0.00..231.00 rows=1608 width=30) (actual time=0.004..0.368 rows=1663 loops=1)
+   Filter: ((age > 50) AND (tier = 'vip'::text))
+   Rows Removed by Filter: 8337
+ Planning Time: 0.204 ms
+ Execution Time: 0.441 ms
+(5 rows)
+
+
+--- [Two-Table Join 1] users JOIN orders: top spenders from Hanoi ---
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=1320.78..1320.80 rows=10 width=41) (actual time=2.756..2.757 rows=0 loops=1)
+   ->  Sort  (cost=1320.78..1325.78 rows=2000 width=41) (actual time=2.756..2.757 rows=0 loops=1)
+         Sort Key: (sum(o.total)) DESC
+         Sort Method: quicksort  Memory: 25kB
+         ->  HashAggregate  (cost=1252.56..1277.56 rows=2000 width=41) (actual time=2.749..2.749 rows=0 loops=1)
+               Group Key: u.name
+               Batches: 1  Memory Usage: 121kB
+               ->  Hash Join  (cost=231.00..1242.48 rows=2016 width=15) (actual time=2.740..2.741 rows=0 loops=1)
+                     Hash Cond: (o.user_id = u.id)
+                     ->  Seq Scan on orders o  (cost=0.00..985.00 rows=10082 width=10) (actual time=0.003..1.878 rows=10000 loops=1)
+                           Filter: (status = 'delivered'::text)
+                           Rows Removed by Filter: 40000
+                     ->  Hash  (cost=206.00..206.00 rows=2000 width=13) (actual time=0.450..0.450 rows=2000 loops=1)
+                           Buckets: 2048  Batches: 1  Memory Usage: 110kB
+                           ->  Seq Scan on users u  (cost=0.00..206.00 rows=2000 width=13) (actual time=0.002..0.347 rows=2000 loops=1)
+                                 Filter: (city = 'Hanoi'::text)
+                                 Rows Removed by Filter: 8000
+ Planning Time: 0.327 ms
+ Execution Time: 3.131 ms
+(19 rows)
+
+
+--- [Two-Table Join 2] orders JOIN order_items: large orders ---
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=14866.35..14869.71 rows=20 width=52) (actual time=53.703..53.712 rows=20 loops=1)
+   ->  HashAggregate  (cost=14866.35..17121.09 rows=13417 width=52) (actual time=53.702..53.709 rows=20 loops=1)
+         Group Key: o.id
+         Filter: (count(oi.id) > 2)
+         Planned Partitions: 4  Batches: 5  Memory Usage: 8241kB  Disk Usage: 3728kB
+         ->  Hash Join  (cost=1488.15..4337.93 rows=120756 width=26) (actual time=5.447..28.240 rows=120564 loops=1)
+               Hash Cond: (oi.order_id = o.id)
+               ->  Seq Scan on order_items oi  (cost=0.00..2456.00 rows=150000 width=18) (actual time=0.003..5.847 rows=150000 loops=1)
+               ->  Hash  (cost=985.00..985.00 rows=40252 width=12) (actual time=5.344..5.344 rows=40188 loops=1)
+                     Buckets: 65536  Batches: 1  Memory Usage: 2247kB
+                     ->  Seq Scan on orders o  (cost=0.00..985.00 rows=40252 width=12) (actual time=0.002..2.937 rows=40188 loops=1)
+                           Filter: (total > '200'::numeric)
+                           Rows Removed by Filter: 9812
+ Planning Time: 0.200 ms
+ Execution Time: 54.583 ms
+(15 rows)
+
+
+--- [Two-Table Join 3] users JOIN orders: subquery (IN) ---
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Hash Join  (cost=235.18..1226.48 rows=1670 width=26) (actual time=0.329..3.512 rows=1670 loops=1)
+   Hash Cond: (orders.user_id = users.id)
+   ->  Seq Scan on orders  (cost=0.00..860.00 rows=50000 width=26) (actual time=0.003..1.500 rows=50000 loops=1)
+   ->  Hash  (cost=231.00..231.00 rows=334 width=4) (actual time=0.323..0.324 rows=334 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 20kB
+         ->  Seq Scan on users  (cost=0.00..231.00 rows=334 width=4) (actual time=0.002..0.309 rows=334 loops=1)
+               Filter: ((age < 30) AND (city = 'Danang'::text))
+               Rows Removed by Filter: 9666
+ Planning Time: 0.255 ms
+ Execution Time: 3.671 ms
+(10 rows)
+
+
+--- [Multi Join 1] users + orders + order_items: full chain ---
+                                                                     QUERY PLAN                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=5321.76..5321.77 rows=5 width=22) (actual time=18.838..18.841 rows=2 loops=1)
+   Sort Key: (sum(oi.quantity)) DESC
+   Sort Method: quicksort  Memory: 25kB
+   ->  GroupAggregate  (cost=5210.92..5321.70 rows=5 width=22) (actual time=18.135..18.830 rows=2 loops=1)
+         Group Key: u.city
+         ->  Sort  (cost=5210.92..5238.60 rows=11073 width=14) (actual time=17.537..17.758 rows=10020 loops=1)
+               Sort Key: u.city
+               Sort Method: quicksort  Memory: 972kB
+               ->  Hash Join  (cost=1337.87..4467.10 rows=11073 width=14) (actual time=4.580..16.556 rows=10020 loops=1)
+                     Hash Cond: (oi.order_id = o.id)
+                     ->  Seq Scan on order_items oi  (cost=0.00..2456.00 rows=150000 width=8) (actual time=0.002..5.029 rows=150000 loops=1)
+                     ->  Hash  (cost=1291.73..1291.73 rows=3691 width=10) (actual time=4.575..4.577 rows=3340 loops=1)
+                           Buckets: 4096  Batches: 1  Memory Usage: 183kB
+                           ->  Hash Join  (cost=253.96..1291.73 rows=3691 width=10) (actual time=0.634..4.382 rows=3340 loops=1)
+                                 Hash Cond: (o.user_id = u.id)
+                                 ->  Seq Scan on orders o  (cost=0.00..985.00 rows=20095 width=8) (actual time=0.011..2.670 rows=20000 loops=1)
+                                       Filter: (status = ANY ('{paid,shipped}'::text[]))
+                                       Rows Removed by Filter: 30000
+                                 ->  Hash  (cost=231.00..231.00 rows=1837 width=10) (actual time=0.621..0.622 rows=1837 loops=1)
+                                       Buckets: 2048  Batches: 1  Memory Usage: 97kB
+                                       ->  Seq Scan on users u  (cost=0.00..231.00 rows=1837 width=10) (actual time=0.002..0.432 rows=1837 loops=1)
+                                             Filter: ((age >= 25) AND (age <= 35))
+                                             Rows Removed by Filter: 8163
+ Planning Time: 0.299 ms
+ Execution Time: 19.255 ms
+(25 rows)
+
+
+--- [Multi Join 2] users + orders + order_items + products: 4-table ---
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=5124.41..5124.46 rows=20 width=53) (actual time=28.167..28.171 rows=5 loops=1)
+   ->  Sort  (cost=5124.41..5124.47 rows=25 width=53) (actual time=28.166..28.169 rows=5 loops=1)
+         Sort Key: (count(*)) DESC
+         Sort Method: quicksort  Memory: 25kB
+         ->  HashAggregate  (cost=5123.45..5123.83 rows=25 width=53) (actual time=28.161..28.165 rows=5 loops=1)
+               Group Key: u.city, p.category
+               Batches: 1  Memory Usage: 24kB
+               ->  Hash Join  (cost=1809.10..4920.84 rows=20261 width=19) (actual time=4.254..26.027 rows=20181 loops=1)
+                     Hash Cond: (oi.product_id = p.id)
+                     ->  Hash Join  (cost=1793.76..4839.61 rows=24891 width=16) (actual time=4.194..24.340 rows=24798 loops=1)
+                           Hash Cond: (o.user_id = u.id)
+                           ->  Hash Join  (cost=1546.09..4395.87 rows=74661 width=14) (actual time=3.585..19.315 rows=74388 loops=1)
+                                 Hash Cond: (oi.order_id = o.id)
+                                 ->  Seq Scan on order_items oi  (cost=0.00..2456.00 rows=150000 width=14) (actual time=0.001..5.180 rows=150000 loops=1)
+                                 ->  Hash  (cost=1235.00..1235.00 rows=24887 width=8) (actual time=3.562..3.563 rows=24796 loops=1)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 1225kB
+                                       ->  Seq Scan on orders o  (cost=0.00..1235.00 rows=24887 width=8) (actual time=0.002..2.329 rows=24796 loops=1)
+                                             Filter: (created_at >= (CURRENT_DATE - 180))
+                                             Rows Removed by Filter: 25204
+                           ->  Hash  (cost=206.00..206.00 rows=3334 width=10) (actual time=0.607..0.608 rows=3334 loops=1)
+                                 Buckets: 4096  Batches: 1  Memory Usage: 178kB
+                                 ->  Seq Scan on users u  (cost=0.00..206.00 rows=3334 width=10) (actual time=0.002..0.449 rows=3334 loops=1)
+                                       Filter: (tier = 'premium'::text)
+                                       Rows Removed by Filter: 6666
+                     ->  Hash  (cost=10.25..10.25 rows=407 width=11) (actual time=0.058..0.059 rows=408 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 27kB
+                           ->  Seq Scan on products p  (cost=0.00..10.25 rows=407 width=11) (actual time=0.003..0.037 rows=408 loops=1)
+                                 Filter: (price > '100'::numeric)
+                                 Rows Removed by Filter: 92
+ Planning Time: 0.586 ms
+ Execution Time: 28.603 ms
+(31 rows)
+
+
+--- [Multi Join 3] 3-table with aggregation + HAVING ---
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=4472.92..4472.96 rows=15 width=24) (actual time=16.508..16.512 rows=0 loops=1)
+   ->  Sort  (cost=4472.92..4477.96 rows=2016 width=24) (actual time=16.508..16.511 rows=0 loops=1)
+         Sort Key: (sum(oi.quantity)) DESC
+         Sort Method: quicksort  Memory: 25kB
+         ->  HashAggregate  (cost=4347.86..4423.46 rows=2016 width=24) (actual time=16.506..16.509 rows=0 loops=1)
+               Group Key: u.name, p.category
+               Filter: (sum(oi.quantity) > 5)
+               Batches: 1  Memory Usage: 217kB
+               ->  Hash Join  (cost=1357.28..4302.50 rows=6048 width=20) (actual time=16.486..16.490 rows=0 loops=1)
+                     Hash Cond: (oi.product_id = p.id)
+                     ->  Hash Join  (cost=1342.03..4271.24 rows=6048 width=17) (actual time=16.441..16.444 rows=0 loops=1)
+                           Hash Cond: (o.user_id = u.id)
+                           ->  Hash Join  (cost=1111.03..3960.81 rows=30246 width=12) (actual time=2.393..14.711 rows=30000 loops=1)
+                                 Hash Cond: (oi.order_id = o.id)
+                                 ->  Seq Scan on order_items oi  (cost=0.00..2456.00 rows=150000 width=12) (actual time=0.002..4.619 rows=150000 loops=1)
+                                 ->  Hash  (cost=985.00..985.00 rows=10082 width=8) (actual time=2.389..2.390 rows=10000 loops=1)
+                                       Buckets: 16384  Batches: 1  Memory Usage: 519kB
+                                       ->  Seq Scan on orders o  (cost=0.00..985.00 rows=10082 width=8) (actual time=0.001..1.877 rows=10000 loops=1)
+                                             Filter: (status = 'delivered'::text)
+                                             Rows Removed by Filter: 40000
+                           ->  Hash  (cost=206.00..206.00 rows=2000 width=13) (actual time=0.467..0.467 rows=2000 loops=1)
+                                 Buckets: 2048  Batches: 1  Memory Usage: 110kB
+                                 ->  Seq Scan on users u  (cost=0.00..206.00 rows=2000 width=13) (actual time=0.002..0.380 rows=2000 loops=1)
+                                       Filter: (city = 'HCMC'::text)
+                                       Rows Removed by Filter: 8000
+                     ->  Hash  (cost=9.00..9.00 rows=500 width=11) (actual time=0.044..0.044 rows=500 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 31kB
+                           ->  Seq Scan on products p  (cost=0.00..9.00 rows=500 width=11) (actual time=0.002..0.022 rows=500 loops=1)
+ Planning Time: 0.424 ms
+ Execution Time: 16.909 ms
+(30 rows)
+
+
+--- [Repeat] Single table: users WHERE age >= 40 AND city = Hanoi ---
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on users  (cost=0.00..231.00 rows=1333 width=30) (actual time=0.004..0.385 rows=1333 loops=1)
+   Filter: ((age >= 40) AND (city = 'Hanoi'::text))
+   Rows Removed by Filter: 8667
+ Planning Time: 0.083 ms
+ Execution Time: 0.618 ms
+(5 rows)
+
+
+--- [Repeat] Two-table join: top spenders from Hanoi ---
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=1242.30..1242.31 rows=1 width=41) (actual time=2.841..2.842 rows=0 loops=1)
+   ->  Sort  (cost=1242.30..1242.31 rows=1 width=41) (actual time=2.840..2.842 rows=0 loops=1)
+         Sort Key: (sum(o.total)) DESC
+         Sort Method: quicksort  Memory: 25kB
+         ->  GroupAggregate  (cost=1242.27..1242.29 rows=1 width=41) (actual time=2.838..2.839 rows=0 loops=1)
+               Group Key: u.name
+               ->  Sort  (cost=1242.27..1242.28 rows=1 width=15) (actual time=2.837..2.838 rows=0 loops=1)
+                     Sort Key: u.name
+                     Sort Method: quicksort  Memory: 25kB
+                     ->  Hash Join  (cost=231.00..1242.26 rows=1 width=15) (actual time=2.835..2.836 rows=0 loops=1)
+                           Hash Cond: (o.user_id = u.id)
+                           ->  Seq Scan on orders o  (cost=0.00..985.00 rows=10000 width=10) (actual time=0.003..1.966 rows=10000 loops=1)
+                                 Filter: (status = 'delivered'::text)
+                                 Rows Removed by Filter: 40000
+                           ->  Hash  (cost=206.00..206.00 rows=2000 width=13) (actual time=0.431..0.432 rows=2000 loops=1)
+                                 Buckets: 2048  Batches: 1  Memory Usage: 110kB
+                                 ->  Seq Scan on users u  (cost=0.00..206.00 rows=2000 width=13) (actual time=0.001..0.340 rows=2000 loops=1)
+                                       Filter: (city = 'Hanoi'::text)
+                                       Rows Removed by Filter: 8000
+ Planning Time: 0.133 ms
+ Execution Time: 3.183 ms
+(21 rows)
+
+
+--- [Repeat] 4-table join: city x category purchase stats ---
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=5120.70..5120.71 rows=5 width=53) (actual time=26.820..26.824 rows=5 loops=1)
+   ->  Sort  (cost=5120.70..5120.71 rows=5 width=53) (actual time=26.820..26.822 rows=5 loops=1)
+         Sort Key: (count(*)) DESC
+         Sort Method: quicksort  Memory: 25kB
+         ->  HashAggregate  (cost=5120.57..5120.64 rows=5 width=53) (actual time=26.814..26.818 rows=5 loops=1)
+               Group Key: u.city, p.category
+               Batches: 1  Memory Usage: 24kB
+               ->  Hash Join  (cost=1807.97..4918.76 rows=20181 width=19) (actual time=4.154..24.724 rows=20181 loops=1)
+                     Hash Cond: (oi.product_id = p.id)
+                     ->  Hash Join  (cost=1792.62..4837.75 rows=24798 width=16) (actual time=4.095..23.039 rows=24798 loops=1)
+                           Hash Cond: (o.user_id = u.id)
+                           ->  Hash Join  (cost=1544.95..4394.73 rows=74388 width=14) (actual time=3.322..18.012 rows=74388 loops=1)
+                                 Hash Cond: (oi.order_id = o.id)
+                                 ->  Seq Scan on order_items oi  (cost=0.00..2456.00 rows=150000 width=14) (actual time=0.004..4.734 rows=150000 loops=1)
+                                 ->  Hash  (cost=1235.00..1235.00 rows=24796 width=8) (actual time=3.312..3.312 rows=24796 loops=1)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 1225kB
+                                       ->  Seq Scan on orders o  (cost=0.00..1235.00 rows=24796 width=8) (actual time=0.004..2.207 rows=24796 loops=1)
+                                             Filter: (created_at >= (CURRENT_DATE - 180))
+                                             Rows Removed by Filter: 25204
+                           ->  Hash  (cost=206.00..206.00 rows=3334 width=10) (actual time=0.771..0.771 rows=3334 loops=1)
+                                 Buckets: 4096  Batches: 1  Memory Usage: 178kB
+                                 ->  Seq Scan on users u  (cost=0.00..206.00 rows=3334 width=10) (actual time=0.002..0.546 rows=3334 loops=1)
+                                       Filter: (tier = 'premium'::text)
+                                       Rows Removed by Filter: 6666
+                     ->  Hash  (cost=10.25..10.25 rows=408 width=11) (actual time=0.057..0.058 rows=408 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 27kB
+                           ->  Seq Scan on products p  (cost=0.00..10.25 rows=408 width=11) (actual time=0.004..0.036 rows=408 loops=1)
+                                 Filter: (price > '100'::numeric)
+                                 Rows Removed by Filter: 92
+ Planning Time: 0.472 ms
+ Execution Time: 27.236 ms
+(31 rows)
+
+
+  -> All test queries executed.
+
+[4/5] Displaying extracted node context data...
+
+============================================
+  SINGLE TABLE NODE CONTEXTS
+============================================
+Expanded display is on.
+-[ RECORD 1 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 1
+node_type     | SeqScan
+clause_text   | (users.age >= 40) AND (users.city = 'Hanoi'::text)
+selectivities | {0.6661,0.2}
+est_card      | 1332.00
+actual_card   | 1333.00
+relations     | {users}
+-[ RECORD 2 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 2
+node_type     | SeqScan
+clause_text   | (orders.total > '500'::numeric) AND (orders.status = 'paid'::text)
+selectivities | {0.504243,0.198733}
+est_card      | 5010.00
+actual_card   | 5013.00
+relations     | {orders}
+-[ RECORD 3 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 3
+node_type     | SeqScan
+clause_text   | (products.price >= '50'::numeric) AND (products.price <= '200'::numeric) AND (products.category = 'Electronics'::text)
+selectivities | {0.91666,0.382328,0.2}
+est_card      | 30.00
+actual_card   | 37.00
+relations     | {products}
+-[ RECORD 4 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 4
+node_type     | SeqScan
+clause_text   | (users.age > 50) AND (users.tier = 'vip'::text)
+selectivities | {0.4824,0.3333}
+est_card      | 1608.00
+actual_card   | 1663.00
+relations     | {users}
+-[ RECORD 5 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 5
+node_type     | SeqScan
+clause_text   | (o.status = 'delivered'::text)
+selectivities | {0.201633}
+est_card      | 10082.00
+actual_card   | 10000.00
+relations     | {orders}
+-[ RECORD 6 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 6
+node_type     | SeqScan
+clause_text   | (u.city = 'Hanoi'::text)
+selectivities | {0.2}
+est_card      | 2000.00
+actual_card   | 2000.00
+relations     | {users}
+-[ RECORD 7 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 11
+node_type     | SeqScan
+clause_text   | 
+selectivities | {}
+est_card      | 150000.00
+actual_card   | 150000.00
+relations     | {order_items}
+-[ RECORD 8 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 12
+node_type     | SeqScan
+clause_text   | (o.total > '200'::numeric)
+selectivities | {0.805046}
+est_card      | 40252.00
+actual_card   | 40188.00
+relations     | {orders}
+-[ RECORD 9 ]-+-----------------------------------------------------------------------------------------------------------------------
+id            | 16
+node_type     | SeqScan
+clause_text   | 
+selectivities | {}
+est_card      | 50000.00
+actual_card   | 50000.00
+relations     | {orders}
+-[ RECORD 10 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 17
+node_type     | SeqScan
+clause_text   | (users.age < 30) AND (users.city = 'Danang'::text)
+selectivities | {0.1669,0.2}
+est_card      | 334.00
+actual_card   | 334.00
+relations     | {users}
+-[ RECORD 11 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 19
+node_type     | SeqScan
+clause_text   | 
+selectivities | {}
+est_card      | 150000.00
+actual_card   | 150000.00
+relations     | {order_items}
+-[ RECORD 12 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 20
+node_type     | SeqScan
+clause_text   | (o.status = ANY ('{paid,shipped}'::text[]))
+selectivities | {0.4019}
+est_card      | 20095.00
+actual_card   | 20000.00
+relations     | {orders}
+-[ RECORD 13 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 21
+node_type     | SeqScan
+clause_text   | (u.age >= 25) AND (u.age <= 35)
+selectivities | {0.9166,0.2671}
+est_card      | 1837.00
+actual_card   | 1837.00
+relations     | {users}
+-[ RECORD 14 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 27
+node_type     | SeqScan
+clause_text   | 
+selectivities | {}
+est_card      | 150000.00
+actual_card   | 150000.00
+relations     | {order_items}
+-[ RECORD 15 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 28
+node_type     | SeqScan
+clause_text   | (o.created_at >= (CURRENT_DATE - 180))
+selectivities | {0.497745}
+est_card      | 24887.00
+actual_card   | 24796.00
+relations     | {orders}
+-[ RECORD 16 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 30
+node_type     | SeqScan
+clause_text   | (u.tier = 'premium'::text)
+selectivities | {0.3334}
+est_card      | 3334.00
+actual_card   | 3334.00
+relations     | {users}
+-[ RECORD 17 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 32
+node_type     | SeqScan
+clause_text   | (p.price > '100'::numeric)
+selectivities | {0.814426}
+est_card      | 407.00
+actual_card   | 408.00
+relations     | {products}
+-[ RECORD 18 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 37
+node_type     | SeqScan
+clause_text   | 
+selectivities | {}
+est_card      | 150000.00
+actual_card   | 150000.00
+relations     | {order_items}
+-[ RECORD 19 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 38
+node_type     | SeqScan
+clause_text   | (o.status = 'delivered'::text)
+selectivities | {0.201633}
+est_card      | 10082.00
+actual_card   | 10000.00
+relations     | {orders}
+-[ RECORD 20 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 40
+node_type     | SeqScan
+clause_text   | (u.city = 'HCMC'::text)
+selectivities | {0.2}
+est_card      | 2000.00
+actual_card   | 2000.00
+relations     | {users}
+-[ RECORD 21 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 42
+node_type     | SeqScan
+clause_text   | 
+selectivities | {}
+est_card      | 500.00
+actual_card   | 500.00
+relations     | {products}
+-[ RECORD 22 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 47
+node_type     | SeqScan
+clause_text   | (users.age >= 40) AND (users.city = 'Hanoi'::text)
+selectivities | {0.6661,0.2}
+est_card      | 1333.00
+actual_card   | 1333.00
+relations     | {users}
+-[ RECORD 23 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 48
+node_type     | SeqScan
+clause_text   | (o.status = 'delivered'::text)
+selectivities | {0.201633}
+est_card      | 10000.00
+actual_card   | 10000.00
+relations     | {orders}
+-[ RECORD 24 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 49
+node_type     | SeqScan
+clause_text   | (u.city = 'Hanoi'::text)
+selectivities | {0.2}
+est_card      | 2000.00
+actual_card   | 2000.00
+relations     | {users}
+-[ RECORD 25 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 55
+node_type     | SeqScan
+clause_text   | 
+selectivities | {}
+est_card      | 150000.00
+actual_card   | 150000.00
+relations     | {order_items}
+-[ RECORD 26 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 56
+node_type     | SeqScan
+clause_text   | (o.created_at >= (CURRENT_DATE - 180))
+selectivities | {0.497745}
+est_card      | 24796.00
+actual_card   | 24796.00
+relations     | {orders}
+-[ RECORD 27 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 58
+node_type     | SeqScan
+clause_text   | (u.tier = 'premium'::text)
+selectivities | {0.3334}
+est_card      | 3334.00
+actual_card   | 3334.00
+relations     | {users}
+-[ RECORD 28 ]+-----------------------------------------------------------------------------------------------------------------------
+id            | 60
+node_type     | SeqScan
+clause_text   | (p.price > '100'::numeric)
+selectivities | {0.814426}
+est_card      | 408.00
+actual_card   | 408.00
+relations     | {products}
+
+Expanded display is off.
+
+============================================
+  JOIN NODE CONTEXTS
+============================================
+Expanded display is on.
+-[ RECORD 1 ]-+------------------------------------
+id            | 7
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (u.id = o.user_id)
+selectivities | {0.0001}
+est_card      | 2016.00
+actual_card   | 1.00
+relations     | {users,orders}
+-[ RECORD 2 ]-+------------------------------------
+id            | 13
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.id = oi.order_id)
+selectivities | {2e-05}
+est_card      | 120756.00
+actual_card   | 120564.00
+relations     | {orders,order_items}
+-[ RECORD 3 ]-+------------------------------------
+id            | 18
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (orders.user_id = users.id)
+selectivities | {0.0001}
+est_card      | 1670.00
+actual_card   | 1670.00
+relations     | {orders,users}
+-[ RECORD 4 ]-+------------------------------------
+id            | 22
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (u.id = o.user_id)
+selectivities | {0.0001}
+est_card      | 3691.00
+actual_card   | 3340.00
+relations     | {users,orders}
+-[ RECORD 5 ]-+------------------------------------
+id            | 23
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.id = oi.order_id)
+selectivities | {2e-05}
+est_card      | 11073.00
+actual_card   | 10020.00
+relations     | {users,orders,order_items}
+-[ RECORD 6 ]-+------------------------------------
+id            | 29
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.id = oi.order_id)
+selectivities | {2e-05}
+est_card      | 74661.00
+actual_card   | 74388.00
+relations     | {orders,order_items}
+-[ RECORD 7 ]-+------------------------------------
+id            | 31
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.user_id = u.id)
+selectivities | {0.0001}
+est_card      | 24891.00
+actual_card   | 24798.00
+relations     | {users,orders,order_items}
+-[ RECORD 8 ]-+------------------------------------
+id            | 33
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (oi.product_id = p.id)
+selectivities | {0.002}
+est_card      | 20261.00
+actual_card   | 20181.00
+relations     | {users,orders,order_items,products}
+-[ RECORD 9 ]-+------------------------------------
+id            | 39
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.id = oi.order_id)
+selectivities | {2e-05}
+est_card      | 30246.00
+actual_card   | 30000.00
+relations     | {orders,order_items}
+-[ RECORD 10 ]+------------------------------------
+id            | 41
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.user_id = u.id)
+selectivities | {0.0001}
+est_card      | 6048.00
+actual_card   | 1.00
+relations     | {users,orders,order_items}
+-[ RECORD 11 ]+------------------------------------
+id            | 43
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (oi.product_id = p.id)
+selectivities | {0.002}
+est_card      | 6048.00
+actual_card   | 1.00
+relations     | {users,orders,order_items,products}
+-[ RECORD 12 ]+------------------------------------
+id            | 50
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (u.id = o.user_id)
+selectivities | {0.0001}
+est_card      | 1.00
+actual_card   | 1.00
+relations     | {users,orders}
+-[ RECORD 13 ]+------------------------------------
+id            | 57
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.id = oi.order_id)
+selectivities | {2e-05}
+est_card      | 74388.00
+actual_card   | 74388.00
+relations     | {orders,order_items}
+-[ RECORD 14 ]+------------------------------------
+id            | 59
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (o.user_id = u.id)
+selectivities | {0.0001}
+est_card      | 24798.00
+actual_card   | 24798.00
+relations     | {users,orders,order_items}
+-[ RECORD 15 ]+------------------------------------
+id            | 61
+node_type     | HashJoin
+join_type     | INNER
+clause_text   | (oi.product_id = p.id)
+selectivities | {0.002}
+est_card      | 20181.00
+actual_card   | 20181.00
+relations     | {users,orders,order_items,products}
+
+Expanded display is off.
+
+============================================
+  AGGREGATE / LIMIT / OTHER NODES
+============================================
+Expanded display is on.
+-[ RECORD 1 ]------------------------------------
+id          | 8
+node_type   | Agg
+est_card    | 0.00
+actual_card | 1.00
+relations   | {users,orders}
+-[ RECORD 2 ]------------------------------------
+id          | 9
+node_type   | Sort
+est_card    | 0.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 3 ]------------------------------------
+id          | 10
+node_type   | Limit
+est_card    | 0.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 4 ]------------------------------------
+id          | 14
+node_type   | Agg
+est_card    | 0.00
+actual_card | 20.00
+relations   | {orders,order_items}
+-[ RECORD 5 ]------------------------------------
+id          | 15
+node_type   | Limit
+est_card    | 0.00
+actual_card | 20.00
+relations   | {}
+-[ RECORD 6 ]------------------------------------
+id          | 24
+node_type   | Sort
+est_card    | 0.00
+actual_card | 10020.00
+relations   | {}
+-[ RECORD 7 ]------------------------------------
+id          | 25
+node_type   | Agg
+est_card    | 0.00
+actual_card | 2.00
+relations   | {}
+-[ RECORD 8 ]------------------------------------
+id          | 26
+node_type   | Sort
+est_card    | 0.00
+actual_card | 2.00
+relations   | {}
+-[ RECORD 9 ]------------------------------------
+id          | 34
+node_type   | Agg
+est_card    | 0.00
+actual_card | 5.00
+relations   | {users,orders,order_items,products}
+-[ RECORD 10 ]-----------------------------------
+id          | 35
+node_type   | Sort
+est_card    | 0.00
+actual_card | 5.00
+relations   | {}
+-[ RECORD 11 ]-----------------------------------
+id          | 36
+node_type   | Limit
+est_card    | 0.00
+actual_card | 5.00
+relations   | {}
+-[ RECORD 12 ]-----------------------------------
+id          | 44
+node_type   | Agg
+est_card    | 0.00
+actual_card | 1.00
+relations   | {users,orders,order_items,products}
+-[ RECORD 13 ]-----------------------------------
+id          | 45
+node_type   | Sort
+est_card    | 0.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 14 ]-----------------------------------
+id          | 46
+node_type   | Limit
+est_card    | 0.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 15 ]-----------------------------------
+id          | 51
+node_type   | Sort
+est_card    | 1.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 16 ]-----------------------------------
+id          | 52
+node_type   | Agg
+est_card    | 1.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 17 ]-----------------------------------
+id          | 53
+node_type   | Sort
+est_card    | 0.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 18 ]-----------------------------------
+id          | 54
+node_type   | Limit
+est_card    | 0.00
+actual_card | 1.00
+relations   | {}
+-[ RECORD 19 ]-----------------------------------
+id          | 62
+node_type   | Agg
+est_card    | 5.00
+actual_card | 5.00
+relations   | {users,orders,order_items,products}
+-[ RECORD 20 ]-----------------------------------
+id          | 63
+node_type   | Sort
+est_card    | 0.00
+actual_card | 5.00
+relations   | {}
+-[ RECORD 21 ]-----------------------------------
+id          | 64
+node_type   | Limit
+est_card    | 0.00
+actual_card | 5.00
+relations   | {}
+
+Expanded display is off.
+
+============================================
+  SUMMARY BY NODE TYPE
+============================================
+ node_type | cnt | avg_est | avg_actual | avg_q_error 
+-----------+-----+---------+------------+-------------
+ SeqScan   |  28 | 34487.9 |    34475.5 |      0.0098
+ HashJoin  |  15 | 28048.6 |    26955.5 |      1.6830
+ Sort      |   8 |     0.1 |     1254.5 |      0.0000
+ Agg       |   7 |     0.9 |        5.0 |      0.0000
+ Limit     |   6 |     0.0 |        5.5 |            
+(5 rows)
+
+
+============================================
+  SUMMARY BY NUMBER OF RELATIONS
+============================================
+ num_rels | cnt | readable_clauses | nodetostring_clauses | no_clause 
+----------+-----+------------------+----------------------+-----------
+        0 |  16 |                0 |                    0 |        16
+        1 |  28 |               21 |                    0 |         7
+        2 |  10 |                8 |                    0 |         2
+        3 |   4 |                4 |                    0 |         0
+        4 |   6 |                3 |                    0 |         3
+(5 rows)
+
+
+Total entries collected:     64
+
+============================================
+  Test Complete!
+  Log saved to: /workspaces/app/logs/nce-test-20260308-173942.log
+============================================

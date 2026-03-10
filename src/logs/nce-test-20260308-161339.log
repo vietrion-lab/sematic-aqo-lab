@@ -1,0 +1,110 @@
+============================================
+  AQO Node Context Extractor - Test Script
+  Sun Mar  8 16:13:39 UTC 2026
+============================================
+
+[1/5] Recreating AQO extension with new schema...
+DROP EXTENSION
+CREATE EXTENSION
+  -> Extension recreated.
+
+[2/5] Creating test tables and sample data...
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 10000
+INSERT 0 500
+INSERT 0 50000
+INSERT 0 150000
+ANALYZE
+  -> Tables created: users(10K), products(500), orders(50K), order_items(150K).
+
+[3/5] Running test queries with NCE enabled...
+
+SET
+SET
+SET
+ aqo_node_context_reset 
+------------------------
+ 
+(1 row)
+
+--- [Single Table 1] users: age range + city filter ---
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on users  (cost=0.00..231.00 rows=1332 width=30) (actual time=0.005..0.389 rows=1333 loops=1)
+   Filter: ((age >= 40) AND (city = 'Hanoi'::text))
+   Rows Removed by Filter: 8667
+ Planning Time: 0.164 ms
+ Execution Time: 0.631 ms
+(5 rows)
+
+
+--- [Single Table 2] orders: status + amount range ---
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
+ Seq Scan on orders  (cost=0.00..1110.00 rows=4921 width=26) (actual time=0.004..2.522 rows=5000 loops=1)
+   Filter: ((total > '500'::numeric) AND (status = 'paid'::text))
+   Rows Removed by Filter: 45000
+ Planning Time: 0.067 ms
+ Execution Time: 2.658 ms
+(5 rows)
+
+
+--- [Single Table 3] products: category + price range ---
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Seq Scan on products  (cost=0.00..12.75 rows=33 width=28) (actual time=0.003..0.033 rows=35 loops=1)
+   Filter: ((price >= '50'::numeric) AND (price <= '200'::numeric) AND (category = 'Electronics'::text))
+   Rows Removed by Filter: 465
+ Planning Time: 0.081 ms
+ Execution Time: 0.087 ms
+(5 rows)
+
+
+--- [Single Table 4] users: tier + age (premium VIPs over 50) ---
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on users  (cost=0.00..231.00 rows=1608 width=30) (actual time=0.003..0.397 rows=1663 loops=1)
+   Filter: ((age > 50) AND (tier = 'vip'::text))
+   Rows Removed by Filter: 8337
+ Planning Time: 0.027 ms
+ Execution Time: 0.458 ms
+(5 rows)
+
+
+--- [Two-Table Join 1] users JOIN orders: top spenders from Hanoi ---
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=1320.67..1320.69 rows=10 width=41) (actual time=2.590..2.591 rows=0 loops=1)
+   ->  Sort  (cost=1320.67..1325.67 rows=2000 width=41) (actual time=2.589..2.590 rows=0 loops=1)
+         Sort Key: (sum(o.total)) DESC
+         Sort Method: quicksort  Memory: 25kB
+         ->  HashAggregate  (cost=1252.45..1277.45 rows=2000 width=41) (actual time=2.582..2.582 rows=0 loops=1)
+               Group Key: u.name
+               Batches: 1  Memory Usage: 121kB
+               ->  Hash Join  (cost=231.00..1242.40 rows=2010 width=15) (actual time=2.572..2.573 rows=0 loops=1)
+                     Hash Cond: (o.user_id = u.id)
+                     ->  Seq Scan on orders o  (cost=0.00..985.00 rows=10052 width=10) (actual time=0.002..1.743 rows=10000 loops=1)
+                           Filter: (status = 'delivered'::text)
+                           Rows Removed by Filter: 40000
+                     ->  Hash  (cost=206.00..206.00 rows=2000 width=13) (actual time=0.438..0.439 rows=2000 loops=1)
+                           Buckets: 2048  Batches: 1  Memory Usage: 110kB
+                           ->  Seq Scan on users u  (cost=0.00..206.00 rows=2000 width=13) (actual time=0.002..0.337 rows=2000 loops=1)
+                                 Filter: (city = 'Hanoi'::text)
+                                 Rows Removed by Filter: 8000
+ Planning Time: 0.241 ms
+ Execution Time: 2.824 ms
+(19 rows)
+
+
+--- [Two-Table Join 2] orders JOIN order_items: large orders ---
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+connection to server was lost
