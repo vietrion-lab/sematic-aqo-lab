@@ -11,6 +11,8 @@ set -euo pipefail
 # 4. Create symlink contrib/aqo -> extension/
 # 5. Build AQO using PGXS (uses installed pg_config)
 
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 WORKSPACE_DIR=/workspaces/app
 POSTGRES_DIR=postgresql-15.15
 POSTGRES_VERSION=15
@@ -140,8 +142,7 @@ fi
 sudo -u postgres "$POSTGRES_BIN/psql" -c "SELECT 1 FROM pg_database WHERE datname='test'" \
 	| grep -q 1 || sudo -u postgres "$POSTGRES_BIN/createdb" test
 
-SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "$SCRIPTS_DIR/load-token-embeddings.py"
+python3 "$SCRIPTS_DIR/04-load-token-embeddings.py"
 echo "✅ token_embeddings table initialized"
 
 # ===== Step 6: Run AQO regression tests =====
@@ -157,8 +158,7 @@ make top_builddir="$WORKSPACE_DIR/$POSTGRES_DIR" check 2>&1 || echo "⚠️  Tes
 echo ""
 echo "⚙️  Step 7: Configuring PostgreSQL to load AQO on startup..."
 
-# Stop PostgreSQL first
-sudo -u postgres "$POSTGRES_BIN/pg_ctl" -D /usr/local/pgsql/data stop 2>/dev/null || true
+# Stop PostgreSQL firstsudo -u postgres "$POSTGRES_BIN/pg_ctl" -D /usr/local/pgsql/data stop 2>/dev/null || true
 sleep 2
 
 # Add AQO to shared_preload_libraries in postgresql.conf
