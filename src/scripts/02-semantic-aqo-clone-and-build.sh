@@ -17,7 +17,7 @@ POSTGRES_VERSION=15
 POSTGRES_BIN=/usr/local/pgsql/bin
 AQO_REPO_DIR="$WORKSPACE_DIR/semantic-aqo-main"
 AQO_REPO_URL="https://github.com/vietrion-lab/semantic-aqo-main.git"
-AQO_BRANCH="stable${POSTGRES_VERSION}"
+AQO_BRANCH="task28_29"
 
 
 
@@ -125,6 +125,24 @@ make top_builddir="$WORKSPACE_DIR/$POSTGRES_DIR" clean || true
 make top_builddir="$WORKSPACE_DIR/$POSTGRES_DIR"
 sudo make top_builddir="$WORKSPACE_DIR/$POSTGRES_DIR" install
 echo "✅ AQO extension built and installed"
+
+# ===== Step 5.5: Initialize token_embeddings table =====
+echo ""
+echo "📊 Step 5.5: Initializing token_embeddings table..."
+
+# Ensure PostgreSQL is running
+if ! sudo -u postgres "$POSTGRES_BIN/pg_ctl" -D /usr/local/pgsql/data status > /dev/null 2>&1; then
+	sudo -u postgres "$POSTGRES_BIN/pg_ctl" -D /usr/local/pgsql/data -l /usr/local/pgsql/data/logfile start
+	sleep 3
+fi
+
+# Ensure the test database exists
+sudo -u postgres "$POSTGRES_BIN/psql" -c "SELECT 1 FROM pg_database WHERE datname='test'" \
+	| grep -q 1 || sudo -u postgres "$POSTGRES_BIN/createdb" test
+
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$SCRIPTS_DIR/load-token-embeddings.py"
+echo "✅ token_embeddings table initialized"
 
 # ===== Step 6: Run AQO regression tests =====
 echo ""

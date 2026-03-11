@@ -1,0 +1,12 @@
+# Table: token_embeddings
+
+This table stores vector embeddings for tokens used in semantic query optimization.
+
+## Columns
+
+| Column    | Description                                                                 |
+|-----------|-----------------------------------------------------------------------------|
+| id        | Primary key identifier for each token embedding record                      |
+| token     | The text token (word, phrase, or query element) being represented           |
+| embedding | Vector representation of the token for semantic similarity computations     |
+
