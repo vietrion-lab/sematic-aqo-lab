@@ -14,7 +14,12 @@ For each iteration × query, captures:
 Outputs CSVs for analyze.py to produce figures.
 
 Usage:
-    python3 runner.py <db_name> <query_dir> <results_dir> [--iterations N]
+    python3 runner.py <db_name> <query_dir> <results_dir> [--iterations N] [--force]
+
+Checkpoint / Resume:
+    After each phase (no_aqo / with_aqo) completes, a .done marker is written.
+    On re-run, completed phases are automatically skipped.
+    Use --force to discard previous results and re-run everything.
 """
 
 import argparse
@@ -166,7 +171,27 @@ def run_phase(db, queries, results_dir, mode, iterations):
         writer.writerows(rows)
 
     print(f"  → {csv_path} ({len(rows)} rows)")
+
+    # Write checkpoint marker
+    done_path = os.path.join(results_dir, f"{mode}.done")
+    with open(done_path, "w") as f:
+        f.write(f"{iterations}\n")
+    print(f"  ✓ Checkpoint saved: {done_path}")
     return csv_path
+
+
+def phase_is_done(results_dir, mode, iterations):
+    """Check if a phase was already completed with the same iteration count."""
+    done_path = os.path.join(results_dir, f"{mode}.done")
+    csv_path = os.path.join(results_dir, f"{mode}_results.csv")
+    if not os.path.exists(done_path) or not os.path.exists(csv_path):
+        return False
+    try:
+        with open(done_path) as f:
+            saved_iters = int(f.read().strip())
+        return saved_iters == iterations
+    except (ValueError, OSError):
+        return False
 
 
 def main():
@@ -175,6 +200,7 @@ def main():
     parser.add_argument("query_dir", help="Directory containing .sql query files")
     parser.add_argument("results_dir", help="Directory to write results")
     parser.add_argument("--iterations", type=int, default=20, help="Iterations per mode (default: 20)")
+    parser.add_argument("--force", action="store_true", help="Ignore checkpoints, re-run everything")
     args = parser.parse_args()
 
     queries = collect_queries(args.query_dir)
@@ -196,13 +222,27 @@ def main():
         print("ERROR: Failed to create AQO extension")
         sys.exit(1)
 
+    # Remove old checkpoints if --force
+    if args.force:
+        for mode in ("no_aqo", "with_aqo"):
+            done = os.path.join(args.results_dir, f"{mode}.done")
+            if os.path.exists(done):
+                os.remove(done)
+                print(f"  Removed checkpoint: {done}")
+
     # Phase 1: no_aqo — reset AQO, run with mode=disabled
-    run_psql(args.db, "SELECT aqo_reset();")
-    run_phase(args.db, queries, args.results_dir, "no_aqo", args.iterations)
+    if phase_is_done(args.results_dir, "no_aqo", args.iterations):
+        print(f"\n  ⏭  Phase NO_AQO already complete ({args.iterations} iters) — skipping")
+    else:
+        run_psql(args.db, "SELECT aqo_reset();")
+        run_phase(args.db, queries, args.results_dir, "no_aqo", args.iterations)
 
     # Phase 2: with_aqo — reset AQO, run with mode=learn
-    run_psql(args.db, "SELECT aqo_reset();")
-    run_phase(args.db, queries, args.results_dir, "with_aqo", args.iterations)
+    if phase_is_done(args.results_dir, "with_aqo", args.iterations):
+        print(f"\n  ⏭  Phase WITH_AQO already complete ({args.iterations} iters) — skipping")
+    else:
+        run_psql(args.db, "SELECT aqo_reset();")
+        run_phase(args.db, queries, args.results_dir, "with_aqo", args.iterations)
 
     print(f"\n{'═'*60}")
     print(f"  Experiment complete. Results: {args.results_dir}")

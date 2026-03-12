@@ -8,7 +8,7 @@
 #   3. Figures are auto-generated per benchmark
 #
 # Usage:
-#   ./scripts/run-experiment.sh [--tpch-only | --tpcds-only | --job-only | --stats-only] [--skip-load]
+#   ./scripts/run-experiment.sh [--tpch-only | --tpcds-only | --job-only | --stats-only] [--skip-load] [--force]
 # =============================================================================
 
 set -euo pipefail
@@ -25,6 +25,7 @@ RUN_TPCDS=true
 RUN_JOB=true
 RUN_STATS=true
 SKIP_LOAD=false
+FORCE=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -33,8 +34,9 @@ for arg in "$@"; do
         --job-only)    RUN_TPCH=false;  RUN_TPCDS=false; RUN_STATS=false ;;
         --stats-only)  RUN_TPCH=false;  RUN_TPCDS=false; RUN_JOB=false ;;
         --skip-load)   SKIP_LOAD=true ;;
+        --force)       FORCE=true ;;
         --help|-h)
-            echo "Usage: $0 [--tpch-only | --tpcds-only | --job-only | --stats-only] [--skip-load]"
+            echo "Usage: $0 [--tpch-only | --tpcds-only | --job-only | --stats-only] [--skip-load] [--force]"
             echo ""
             echo "Options:"
             echo "  --tpch-only    Run only TPC-H benchmark"
@@ -42,6 +44,7 @@ for arg in "$@"; do
             echo "  --job-only     Run only JOB (IMDB) benchmark"
             echo "  --stats-only   Run only STATS-CEB benchmark"
             echo "  --skip-load    Skip database loading (assume DBs exist)"
+            echo "  --force        Discard checkpoints and re-run all phases"
             exit 0
             ;;
         *)
@@ -59,6 +62,7 @@ echo "║  TPC-DS : $([ "$RUN_TPCDS" = true ] && echo "YES" || echo "SKIP")"
 echo "║  JOB    : $([ "$RUN_JOB" = true ] && echo "YES" || echo "SKIP")"
 echo "║  STATS  : $([ "$RUN_STATS" = true ] && echo "YES" || echo "SKIP")"
 echo "║  Iters  : $ITERATIONS per mode"
+echo "║  Force  : $([ "$FORCE" = true ] && echo "YES" || echo "NO (resume)")"
 echo "║  Skip DB: $([ "$SKIP_LOAD" = true ] && echo "YES" || echo "NO")"
 echo "╚═══════════════════════════════════════════════════════════╝"
 
@@ -123,29 +127,32 @@ else
     echo "━━━ Step 1: Database Setup — SKIPPED ━━━"
 fi
 
+FORCE_ARG=""
+[ "$FORCE" = true ] && FORCE_ARG="--force"
+
 # ── Step 2: Run Experiments ──────────────────────────────────────────────────
 if [ "$RUN_TPCH" = true ]; then
     echo ""
     echo "━━━ Step 2: TPC-H Benchmark ━━━"
-    bash "$EXPERIMENT_DIR/tpch/run.sh"
+    bash "$EXPERIMENT_DIR/tpch/run.sh" $FORCE_ARG
 fi
 
 if [ "$RUN_TPCDS" = true ]; then
     echo ""
     echo "━━━ Step 3: TPC-DS Benchmark ━━━"
-    bash "$EXPERIMENT_DIR/tpcds/run.sh"
+    bash "$EXPERIMENT_DIR/tpcds/run.sh" $FORCE_ARG
 fi
 
 if [ "$RUN_JOB" = true ]; then
     echo ""
     echo "━━━ Step 4: JOB (IMDB) Benchmark ━━━"
-    bash "$EXPERIMENT_DIR/job/run.sh"
+    bash "$EXPERIMENT_DIR/job/run.sh" $FORCE_ARG
 fi
 
 if [ "$RUN_STATS" = true ]; then
     echo ""
     echo "━━━ Step 5: STATS-CEB Benchmark ━━━"
-    bash "$EXPERIMENT_DIR/stats/run.sh"
+    bash "$EXPERIMENT_DIR/stats/run.sh" $FORCE_ARG
 fi
 
 echo ""

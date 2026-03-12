@@ -31,7 +31,7 @@ echo "════════════════════════�
 
 /usr/bin/python3 "$EXPERIMENT_DIR/runner.py" \
     "$DB" "$QUERY_DIR" "$RESULTS_DIR" \
-    --iterations "$ITERS"
+    --iterations "$ITERS" $FORCE_FLAG
 
 /usr/bin/python3 "$EXPERIMENT_DIR/analyze.py" \
     "$RESULTS_DIR" --title "$BENCH"
