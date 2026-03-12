@@ -199,20 +199,27 @@ for _qfile in "$TMPQUERY_DIR"/*.sql; do
     _qname=$(basename "$_qfile")
     printf "  [%d/%d] %-36s" "$_i" "$_total" "$_qname"
 
-    # Redirect stdout to /dev/null — only capture stderr for error diagnosis
+    # Two-layer timeout protection:
+    #   Layer 1: PostgreSQL statement_timeout (55s) — query cancels itself cleanly
+    #   Layer 2: timeout --kill-after=5 (60s SIGTERM, 65s SIGKILL) — hard kill fallback
     _stderr_file=$(mktemp)
     _t0=$SECONDS
-    sudo -u postgres timeout 60 /usr/local/pgsql/bin/psql -d "$DB" -v ON_ERROR_STOP=1 -X -q -f "$_qfile" \
+    sudo -u postgres timeout --kill-after=5 60 \
+        /usr/local/pgsql/bin/psql -d "$DB" -v ON_ERROR_STOP=1 -X -q \
+        -c "SET statement_timeout = '55s';" \
+        -f "$_qfile" \
         > /dev/null 2>"$_stderr_file"
     _rc=$?
     _elapsed=$(( SECONDS - _t0 ))
 
+    # rc=124: timeout SIGTERM, rc=137: timeout SIGKILL
+    # Also check stderr for statement_timeout cancellation
     if [ $_rc -eq 0 ]; then
         printf "OK          %3ds\n" "$_elapsed"
         cp "$_qfile" "$QUERY_DIR/$_qname"
         _valid=$((_valid+1))
-    elif [ $_rc -eq 124 ]; then
-        printf "SKIP (>60s) %3ds\n" "$_elapsed"
+    elif [ $_rc -eq 124 ] || [ $_rc -eq 137 ] || grep -q "canceling statement due to statement timeout" "$_stderr_file" 2>/dev/null; then
+        printf "SKIP (>55s) %3ds\n" "$_elapsed"
         _slow=$((_slow+1))
     else
         _reason=$(grep -i 'error' "$_stderr_file" | head -1 | cut -c1-60)
