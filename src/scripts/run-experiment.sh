@@ -4,9 +4,9 @@
 #
 # Controls the entire flow:
 #   1. Ensure databases exist (load TPC-H / TPC-DS if needed)
-#   2. Run TPC-H experiment (disabled → learn → frozen)
-#   3. Run TPC-DS experiment (disabled → learn → frozen)
-#   4. Analyze results
+#   2. Run TPC-H experiment (no_aqo vs with_aqo, 20 iterations each)
+#   3. Run TPC-DS experiment (no_aqo vs with_aqo, 20 iterations each)
+#   4. Figures are auto-generated per benchmark
 #
 # Usage:
 #   ./scripts/run-experiment.sh [--tpch-only | --tpcds-only] [--skip-load]
@@ -51,6 +51,7 @@ echo "║         AQO Full Experiment Pipeline                     ║"
 echo "║                                                          ║"
 echo "║  TPC-H  : $([ "$RUN_TPCH" = true ] && echo "YES" || echo "SKIP")"
 echo "║  TPC-DS : $([ "$RUN_TPCDS" = true ] && echo "YES" || echo "SKIP")"
+echo "║  Iters  : $ITERATIONS per mode"
 echo "║  Skip DB: $([ "$SKIP_LOAD" = true ] && echo "YES" || echo "NO")"
 echo "╚═══════════════════════════════════════════════════════════╝"
 
@@ -91,46 +92,20 @@ else
     echo "━━━ Step 1: Database Setup — SKIPPED ━━━"
 fi
 
-# ── Step 2: Run TPC-H ───────────────────────────────────────────────────────
-TPCH_RESULTS=""
+# ── Step 2: Run Experiments ──────────────────────────────────────────────────
 if [ "$RUN_TPCH" = true ]; then
     echo ""
     echo "━━━ Step 2: TPC-H Benchmark ━━━"
-    chmod +x "$EXPERIMENT_DIR/tpch/run.sh"
     bash "$EXPERIMENT_DIR/tpch/run.sh"
-    # Find latest results directory
-    TPCH_RESULTS=$(ls -td "$EXPERIMENT_DIR/tpch/results"/*/ 2>/dev/null | head -1)
 fi
 
-# ── Step 3: Run TPC-DS ──────────────────────────────────────────────────────
-TPCDS_RESULTS=""
 if [ "$RUN_TPCDS" = true ]; then
     echo ""
     echo "━━━ Step 3: TPC-DS Benchmark ━━━"
-    chmod +x "$EXPERIMENT_DIR/tpcds/run.sh"
     bash "$EXPERIMENT_DIR/tpcds/run.sh"
-    TPCDS_RESULTS=$(ls -td "$EXPERIMENT_DIR/tpcds/results"/*/ 2>/dev/null | head -1)
-fi
-
-# ── Step 4: Analyze ─────────────────────────────────────────────────────────
-echo ""
-echo "━━━ Step 4: Analysis ━━━"
-
-if [ -n "$TPCH_RESULTS" ]; then
-    echo ""
-    echo "── TPC-H Analysis ──"
-    python3 "$EXPERIMENT_DIR/analyze.py" "$TPCH_RESULTS"
-fi
-
-if [ -n "$TPCDS_RESULTS" ]; then
-    echo ""
-    echo "── TPC-DS Analysis ──"
-    python3 "$EXPERIMENT_DIR/analyze.py" "$TPCDS_RESULTS"
 fi
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
 echo "  Full experiment pipeline complete."
-[ -n "$TPCH_RESULTS" ] && echo "  TPC-H results : $TPCH_RESULTS"
-[ -n "$TPCDS_RESULTS" ] && echo "  TPC-DS results: $TPCDS_RESULTS"
 echo "════════════════════════════════════════════════════════════"

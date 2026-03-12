@@ -11,14 +11,11 @@ export PGDATA="/usr/local/pgsql/data"
 export TPCH_DB="tpch"
 export TPCDS_DB="tpcds"
 
-# Iterations per phase
-export DISABLED_ITERS=5
-export LEARN_ITERS=15
-export FROZEN_ITERS=5
+# Iterations — both modes run this many times
+export ITERATIONS=20
 
 # AQO settings
 export AQO_JOIN_THRESHOLD=0
 
-# Parallelism (disabled during learn for stability)
-export LEARN_PARALLEL_WORKERS=0
-export FROZEN_PARALLEL_WORKERS=2
+# Parallelism (disabled during AQO learn for deterministic results)
+export AQO_PARALLEL_WORKERS=0

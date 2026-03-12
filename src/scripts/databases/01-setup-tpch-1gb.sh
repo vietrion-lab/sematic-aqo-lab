@@ -154,6 +154,8 @@ $PSQL $DB -c "ANALYZE;"
 echo "12. Generate query seeds (all templates x 20 seeds)"
 
 QUERY_DIR="$REPO_ROOT/experiment/tpch/queries"
+TMPQUERY_DIR=$(mktemp -d /tmp/tpch-queries-XXXXXX)
+chmod 755 "$TMPQUERY_DIR"
 mkdir -p "$QUERY_DIR"
 
 # 20 diverse random seeds
@@ -171,45 +173,58 @@ for tmpl in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do
         | grep -v "^where rownum" \
         | sed "s/interval '\([0-9]*\)' day ([0-9]\+)/interval '\1 days'/g" \
         | sed '/^[[:space:]]*$/d' \
-        > "$QUERY_DIR/$fname"
+        > "$TMPQUERY_DIR/$fname"
+        # remove empty files
+        [ -s "$TMPQUERY_DIR/$fname" ] || rm -f "$TMPQUERY_DIR/$fname"
     done
     echo "  Q$tmpl done (${#SEEDS[@]} variants)"
 done
 
-echo "  Generated $(ls "$QUERY_DIR" | wc -l) query files in $QUERY_DIR"
+_generated=$(ls "$TMPQUERY_DIR"/*.sql 2>/dev/null | wc -l)
+chmod 644 "$TMPQUERY_DIR"/*.sql 2>/dev/null || true
+echo "  Generated $_generated query files → validating in temp dir"
 
-echo "13. Validate queries (drop errors and queries > 10 min)"
+echo "13. Validate queries (drop errors and queries > 60s)"
+echo "    (60s timeout per query — standard for SF=1 industry benchmarks)"
 
+# NOTE: stdout is redirected to /dev/null during validation to avoid
+# capturing huge result sets in bash variables (which caused OOM crashes).
+# Only stderr is captured for error messages.
 _valid=0; _err=0; _slow=0
-_total=$(ls "$QUERY_DIR"/*.sql 2>/dev/null | wc -l)
+_total=$(ls "$TMPQUERY_DIR"/*.sql 2>/dev/null | wc -l)
 _i=0
-for _qfile in "$QUERY_DIR"/*.sql; do
+for _qfile in "$TMPQUERY_DIR"/*.sql; do
     [ -f "$_qfile" ] || continue
     _i=$((_i+1))
     _qname=$(basename "$_qfile")
     printf "  [%d/%d] %-36s" "$_i" "$_total" "$_qname"
 
-    _out=$(timeout 600 $PSQL -d "$DB" -v ON_ERROR_STOP=1 -X -q -f "$_qfile" 2>&1)
+    # Redirect stdout to /dev/null — only capture stderr for error diagnosis
+    _stderr_file=$(mktemp)
+    timeout 60 $PSQL -d "$DB" -v ON_ERROR_STOP=1 -X -q -f "$_qfile" \
+        > /dev/null 2>"$_stderr_file"
     _rc=$?
 
     if [ $_rc -eq 0 ]; then
         echo "OK"
+        cp "$_qfile" "$QUERY_DIR/$_qname"
         _valid=$((_valid+1))
     elif [ $_rc -eq 124 ]; then
-        echo "REMOVED (timeout >10min)"
-        rm -f "$_qfile"
+        echo "SKIP (timeout >60s)"
         _slow=$((_slow+1))
     else
-        _reason=$(echo "$_out" | grep -i 'error' | head -1 | cut -c1-80)
-        echo "REMOVED (${_reason})"
-        rm -f "$_qfile"
+        _reason=$(grep -i 'error' "$_stderr_file" | head -1 | cut -c1-80)
+        echo "SKIP (${_reason})"
         _err=$((_err+1))
     fi
+    rm -f "$_stderr_file"
 done
 
+rm -rf "$TMPQUERY_DIR"
+
 echo ""
-echo "  Kept: $_valid | Removed (error): $_err | Removed (timeout): $_slow"
-echo "  Final query count: $(ls \"$QUERY_DIR\" | wc -l)"
+echo "  Kept: $_valid | Skipped (error): $_err | Skipped (timeout): $_slow"
+echo "  Final query count: $(ls "$QUERY_DIR"/*.sql 2>/dev/null | wc -l)"
 
 echo ""
 echo "=================================="
