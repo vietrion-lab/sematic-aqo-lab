@@ -17,7 +17,7 @@ export JOB_DB="imdb"
 export STATS_DB="stats"
 
 # Iterations — both modes run this many times
-export ITERATIONS=20
+export ITERATIONS=15
 
 # AQO settings
 export AQO_JOIN_THRESHOLD=0
