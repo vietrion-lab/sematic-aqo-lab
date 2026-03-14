@@ -6,5 +6,8 @@ venv/
 logs/
 postgresql-*/
 postgresql-*.tar.gz
+aqo-standard/
+../.vscode
 
 semantic-aqo-main/
+
