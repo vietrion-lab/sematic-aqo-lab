@@ -2,7 +2,12 @@
 """
 analyze.py — Generate research-quality figures from AQO experiment results.
 
-Reads no_aqo_results.csv and with_aqo_results.csv, produces 3 figures:
+Reads up to 3 result CSVs (whichever exist):
+  no_aqo_results.csv
+  standard_aqo_results.csv
+  semantic_aqo_results.csv
+
+Produces 3 figures (individual + combined):
   Figure 1: Cardinality Estimation Error (Q-error) over iterations
   Figure 2: Planning Time over iterations
   Figure 3: Execution Time over iterations
@@ -23,6 +28,32 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
+# ── Style per series ──────────────────────────────────────────────────────────
+SERIES = [
+    {
+        "mode":    "no_aqo",
+        "label":   "PostgreSQL (no AQO)",
+        "color":   "#d62728",
+        "marker":  "o",
+        "ls":      "-",
+    },
+    {
+        "mode":    "standard_aqo",
+        "label":   "Standard AQO (postgrespro)",
+        "color":   "#2ca02c",
+        "marker":  "^",
+        "ls":      "--",
+    },
+    {
+        "mode":    "semantic_aqo",
+        "label":   "Semantic AQO",
+        "color":   "#1f77b4",
+        "marker":  "s",
+        "ls":      "-",
+    },
+]
+
+
 def load_csv(csv_path):
     """Load a results CSV → list of dicts."""
     rows = []
@@ -30,12 +61,12 @@ def load_csv(csv_path):
         reader = csv.DictReader(f)
         for row in reader:
             rows.append({
-                "iteration": int(row["iteration"]),
-                "query": row["query"],
+                "iteration":    int(row["iteration"]),
+                "query":        row["query"],
                 "plan_time_ms": float(row["plan_time_ms"]),
                 "exec_time_ms": float(row["exec_time_ms"]),
                 "total_time_ms": float(row["total_time_ms"]),
-                "avg_qerror": float(row["avg_qerror"]),
+                "avg_qerror":   float(row["avg_qerror"]),
             })
     return rows
 
@@ -50,108 +81,122 @@ def avg_per_iteration(rows, field):
     return iters, avgs
 
 
-def plot_figure(ax, iters_noaqo, vals_noaqo, iters_aqo, vals_aqo,
-                ylabel, title):
-    """Plot a single comparison figure on the given axes."""
-    ax.plot(iters_noaqo, vals_noaqo, "o-", color="#d62728", linewidth=2,
-            markersize=5, label="PostgreSQL (no AQO)", alpha=0.85)
-    ax.plot(iters_aqo, vals_aqo, "s-", color="#1f77b4", linewidth=2,
-            markersize=5, label="Semantic AQO", alpha=0.85)
+def plot_metric(ax, loaded_series, field, ylabel, title):
+    """
+    Plot one metric with all available series.
+    loaded_series: list of (style_dict, rows)
+    """
+    for style, rows in loaded_series:
+        iters, vals = avg_per_iteration(rows, field)
+        ax.plot(iters, vals,
+                marker=style["marker"],
+                color=style["color"],
+                linestyle=style["ls"],
+                linewidth=2,
+                markersize=5,
+                label=style["label"],
+                alpha=0.85)
 
     ax.set_xlabel("Iteration", fontsize=12)
     ax.set_ylabel(ylabel, fontsize=12)
     ax.set_title(title, fontsize=13, fontweight="bold")
     ax.legend(fontsize=10, loc="best")
     ax.grid(True, alpha=0.3)
-    ax.set_xticks(iters_aqo)
+    # x-ticks from the first series (all share same iteration count)
+    if loaded_series:
+        iters, _ = avg_per_iteration(loaded_series[0][1], field)
+        ax.set_xticks(iters)
+
+
+def print_summary(loaded_series, bench_name):
+    print(f"\n{'═'*60}")
+    print(f"  Analysis: {bench_name}")
+    print(f"{'═'*60}")
+    for style, rows in loaded_series:
+        _, qerr  = avg_per_iteration(rows, "avg_qerror")
+        _, plan  = avg_per_iteration(rows, "plan_time_ms")
+        _, exec_ = avg_per_iteration(rows, "exec_time_ms")
+        label = style["label"]
+        print(f"  {label:<30} Q-err: {mean(qerr):>6.2f}  "
+              f"Plan: {mean(plan):>7.2f}ms  Exec: {mean(exec_):>9.2f}ms")
+
+    # Speedup vs no_aqo baseline
+    no_aqo_rows = next((r for s, r in loaded_series if s["mode"] == "no_aqo"), None)
+    if no_aqo_rows:
+        _, base_exec = avg_per_iteration(no_aqo_rows, "exec_time_ms")
+        base_mean = mean(base_exec)
+        for style, rows in loaded_series:
+            if style["mode"] == "no_aqo":
+                continue
+            _, exec_ = avg_per_iteration(rows, "exec_time_ms")
+            speedup = base_mean / mean(exec_) if mean(exec_) > 0 else float("inf")
+            sign = "↑" if speedup >= 1.0 else "↓"
+            print(f"  {style['label']:<30} Exec speedup vs no_aqo: {speedup:.2f}× {sign}")
+    print(f"{'═'*60}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AQO Experiment Analysis")
+    parser = argparse.ArgumentParser(description="AQO 3-way Experiment Analysis")
     parser.add_argument("results_dir", help="Directory containing result CSVs")
     parser.add_argument("--title", default="", help="Benchmark name for figure titles")
     args = parser.parse_args()
 
     results_dir = args.results_dir
-    noaqo_path = os.path.join(results_dir, "no_aqo_results.csv")
-    aqo_path = os.path.join(results_dir, "with_aqo_results.csv")
-
-    for p in [noaqo_path, aqo_path]:
-        if not os.path.exists(p):
-            print(f"Error: {p} not found")
-            sys.exit(1)
-
-    noaqo_rows = load_csv(noaqo_path)
-    aqo_rows = load_csv(aqo_path)
     bench_name = args.title or os.path.basename(results_dir.rstrip("/"))
 
-    # ── Compute per-iteration averages ────────────────────────────────────
-    it_n, qerr_n = avg_per_iteration(noaqo_rows, "avg_qerror")
-    it_a, qerr_a = avg_per_iteration(aqo_rows, "avg_qerror")
+    # ── Load whichever CSVs exist ─────────────────────────────────────────────
+    loaded_series = []
+    for style in SERIES:
+        csv_path = os.path.join(results_dir, f"{style['mode']}_results.csv")
+        if os.path.exists(csv_path):
+            rows = load_csv(csv_path)
+            loaded_series.append((style, rows))
+            print(f"  Loaded: {style['mode']} ({len(rows)} rows)")
+        else:
+            print(f"  Skip  : {style['mode']} (not found: {csv_path})")
 
-    it_np, plan_n = avg_per_iteration(noaqo_rows, "plan_time_ms")
-    it_ap, plan_a = avg_per_iteration(aqo_rows, "plan_time_ms")
+    if not loaded_series:
+        print(f"Error: no result CSVs found in {results_dir}")
+        sys.exit(1)
 
-    it_ne, exec_n = avg_per_iteration(noaqo_rows, "exec_time_ms")
-    it_ae, exec_a = avg_per_iteration(aqo_rows, "exec_time_ms")
+    print_summary(loaded_series, bench_name)
 
-    # ── Print summary ─────────────────────────────────────────────────────
-    print(f"\n{'═'*60}")
-    print(f"  Analysis: {bench_name}")
-    print(f"{'═'*60}")
-    print(f"  No AQO  — Q-err: {mean(qerr_n):.2f}  Plan: {mean(plan_n):.2f}ms  Exec: {mean(exec_n):.2f}ms")
-    print(f"  AQO     — Q-err: {mean(qerr_a):.2f}  Plan: {mean(plan_a):.2f}ms  Exec: {mean(exec_a):.2f}ms")
-    if mean(exec_n) > 0:
-        speedup = mean(exec_n) / mean(exec_a) if mean(exec_a) > 0 else float('inf')
-        print(f"  Exec Speedup: {speedup:.2f}x")
-    if qerr_a:
-        print(f"  Q-error improvement: {qerr_a[0]:.2f} → {qerr_a[-1]:.2f}")
-    print(f"{'═'*60}")
-
-    # ── Generate Combined Figure (3 panels) ───────────────────────────────
+    # ── Combined figure (3 panels) ────────────────────────────────────────────
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(20, 5))
-    fig.suptitle(f"AQO Experiment — {bench_name}", fontsize=14, fontweight="bold")
+    fig.suptitle(f"AQO 3-Way Experiment — {bench_name}", fontsize=14, fontweight="bold")
 
-    plot_figure(ax1, it_n, qerr_n, it_a, qerr_a,
+    plot_metric(ax1, loaded_series, "avg_qerror",
                 ylabel="Avg Q-error (geometric mean)",
                 title="Cardinality Estimation Accuracy")
 
-    plot_figure(ax2, it_np, plan_n, it_ap, plan_a,
+    plot_metric(ax2, loaded_series, "plan_time_ms",
                 ylabel="Avg Planning Time (ms)",
                 title="Planning Time")
 
-    plot_figure(ax3, it_ne, exec_n, it_ae, exec_a,
+    plot_metric(ax3, loaded_series, "exec_time_ms",
                 ylabel="Avg Execution Time (ms)",
                 title="Execution Time")
 
     plt.tight_layout()
-
     fig_path = os.path.join(results_dir, f"figures_{bench_name}.png")
     fig.savefig(fig_path, dpi=150, bbox_inches="tight")
     print(f"\n  Figures saved: {fig_path}")
     plt.close(fig)
 
-    # Also save individual figures for the paper
-    for metric, it_ns, vals_ns, it_as, vals_as, ylabel, title_str, fname in [
-        ("qerror", it_n, qerr_n, it_a, qerr_a,
-         "Avg Q-error (geometric mean)",
-         "Cardinality Estimation Accuracy",
-         f"fig1_cardinality_{bench_name}.png"),
-        ("plan", it_np, plan_n, it_ap, plan_a,
-         "Avg Planning Time (ms)",
-         "Planning Time",
-         f"fig2_planning_time_{bench_name}.png"),
-        ("exec", it_ne, exec_n, it_ae, exec_a,
-         "Avg Execution Time (ms)",
-         "Execution Time",
-         f"fig3_execution_time_{bench_name}.png"),
-    ]:
-        fig_single, ax = plt.subplots(figsize=(7, 5))
-        plot_figure(ax, it_ns, vals_ns, it_as, vals_as,
+    # ── Individual figures ────────────────────────────────────────────────────
+    metrics = [
+        ("avg_qerror",   "Avg Q-error (geometric mean)",  "Cardinality Estimation Accuracy", f"fig1_cardinality_{bench_name}.png"),
+        ("plan_time_ms", "Avg Planning Time (ms)",         "Planning Time",                   f"fig2_planning_time_{bench_name}.png"),
+        ("exec_time_ms", "Avg Execution Time (ms)",        "Execution Time",                  f"fig3_execution_time_{bench_name}.png"),
+    ]
+    for field, ylabel, title_str, fname in metrics:
+        fig_s, ax = plt.subplots(figsize=(8, 5))
+        plot_metric(ax, loaded_series, field,
                     ylabel=ylabel,
                     title=f"{title_str} — {bench_name}")
-        fig_single.savefig(os.path.join(results_dir, fname), dpi=150, bbox_inches="tight")
-        plt.close(fig_single)
+        out = os.path.join(results_dir, fname)
+        fig_s.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig_s)
         print(f"  {fname}")
 
 

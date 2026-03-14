@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# TPC-H Experiment Runner  (standalone, with checkpoint/resume)
+# TPC-H Experiment Runner  (3-way: no_aqo | standard_aqo | semantic_aqo)
 #
-# Runs 2 modes × N iterations: no_aqo (baseline) & with_aqo (semantic AQO)
-# Results written to experiment/tpch/results/
-# Completed phases are skipped on re-run.  Use --force to re-run everything.
+# Usage:
+#   bash experiment/tpch/run.sh [iterations] [--force] [--modes MODE1,MODE2,...]
 #
-# Usage:  bash experiment/tpch/run.sh [iterations] [--force]
+# Modes (default: all three):
+#   no_aqo          PostgreSQL default optimizer
+#   standard_aqo    postgrespro/aqo stable15
+#   semantic_aqo    semantic-aqo (w2v embeddings)
+#
+# Requires 04-standard-aqo-build.sh to have been run at least once for
+# standard_aqo mode. Set SWITCH_AQO_SKIP=1 to skip AQO variant switching.
 # =============================================================================
 
 set -euo pipefail
@@ -14,34 +19,37 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPERIMENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# ── Config (override via env or CLI arg) ─────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────────────
 DB="${TPCH_DB:-tpch}"
 BENCH="TPC-H"
 QUERY_DIR="$SCRIPT_DIR/queries"
+RESULTS_DIR="$SCRIPT_DIR/results"
+mkdir -p "$RESULTS_DIR"
 
-# ── Parse args ───────────────────────────────────────────────────────────
-ITERS="${ITERATIONS:-20}"
+# ── Parse args ────────────────────────────────────────────────────────────────
+ITERS="${ITERATIONS:-15}"
 FORCE_FLAG=""
+MODES_FLAG=""
+
 for arg in "$@"; do
     case "$arg" in
-        --force) FORCE_FLAG="--force" ;;
-        *)       ITERS="$arg" ;;
+        --force)         FORCE_FLAG="--force" ;;
+        --modes=*)       MODES_FLAG="--modes=${arg#--modes=}" ;;
+        --modes)         ;;  # handled by next arg — not supported in this simple parser; use --modes=...
+        *)               ITERS="$arg" ;;
     esac
 done
 [ -n "${FORCE:-}" ] && FORCE_FLAG="--force"
 
-# ── Stable results dir (checkpoint-friendly) ─────────────────────────────
-RESULTS_DIR="$SCRIPT_DIR/results"
-mkdir -p "$RESULTS_DIR"
-
 echo "══════════════════════════════════════════════════════════"
-echo "  ${BENCH} experiment  |  DB: ${DB}  |  Iterations: ${ITERS}"
+echo "  ${BENCH} 3-way experiment  |  DB: ${DB}  |  Iters: ${ITERS}"
+echo "  Modes: ${MODES_FLAG:-all (no_aqo, standard_aqo, semantic_aqo)}"
 echo "  Results → ${RESULTS_DIR}"
 echo "══════════════════════════════════════════════════════════"
 
 /usr/bin/python3 "$EXPERIMENT_DIR/runner.py" \
     "$DB" "$QUERY_DIR" "$RESULTS_DIR" \
-    --iterations "$ITERS" $FORCE_FLAG
+    --iterations "$ITERS" $FORCE_FLAG $MODES_FLAG
 
 /usr/bin/python3 "$EXPERIMENT_DIR/analyze.py" \
     "$RESULTS_DIR" --title "$BENCH"
