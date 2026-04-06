@@ -9,52 +9,11 @@
 
 ## Navigation Map
 
-```mermaid
-graph TD
-    CLAUDE["CLAUDE.md<br/><b>START HERE</b><br/>Rules & Navigation"]
-
-    ARCH["ARCHITECTURE.md<br/>System architecture<br/>Mermaid diagrams<br/>Module map<br/>Data flow"]
-
-    MEM["memories/<br/>Daily notes<br/>Decisions log<br/>Debug sessions"]
-
-    PLANS["plans/<br/>Future work items<br/>Leader directives<br/>Roadmap"]
-
-    SKILLS["skills/<br/>PG extension dev patterns<br/>C hook recipes<br/>Build & test guides"]
-
-    SRC["src/<br/>Source code"]
-    SRC_AQO["src/aqo-standard/<br/>Upstream AQO (inherited)"]
-    SRC_PG["src/postgresql-15.15/contrib/aqo/<br/>Semantic AQO extension"]
-    SRC_PY["Python sensate package<br/>W2V training pipeline"]
-    SRC_SCRIPTS["src/scripts/<br/>Build & test scripts"]
-    SRC_DOCS["src/docs/<br/>Internal docs & diagrams"]
-
-    CLAUDE --> ARCH
-    CLAUDE --> MEM
-    CLAUDE --> PLANS
-    CLAUDE --> SKILLS
-    CLAUDE --> SRC
-
-    SRC --> SRC_AQO
-    SRC --> SRC_PG
-    SRC --> SRC_PY
-    SRC --> SRC_SCRIPTS
-    SRC --> SRC_DOCS
-
-    style CLAUDE fill:#e8744f,color:#fff,stroke:#333,stroke-width:3px
-    style ARCH fill:#4a90d9,color:#fff
-    style MEM fill:#7bc67e,color:#fff
-    style PLANS fill:#d94a7a,color:#fff
-    style SKILLS fill:#f5a623,color:#fff
-```
-
-## File Purposes
-
 | Path | What's Inside | When to Read |
 |------|---------------|--------------|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Full system architecture, Mermaid diagrams, module map, data flow, experiment results, known limitations | Understanding how the system works, onboarding, before modifying any module |
 | [`memories/`](./memories/) | Daily development notes, key decisions, debug sessions, meeting notes | Retrieving context from past work sessions |
 | [`plans/`](./plans/) | Future work items assigned by the team leader, roadmap, milestones | Understanding what comes next, prioritization |
-| [`skills/`](./skills/) | PostgreSQL extension development patterns, C hook recipes, Makefile patterns, GUC setup, SPI usage, shared memory, build/test workflows | When writing or modifying C extension code |
 
 ## Rules
 
@@ -64,31 +23,30 @@ graph TD
 2. **Read `ARCHITECTURE.md`** before making any code changes to understand the full system
 3. **Check `memories/`** for recent context before starting new work - search by date or topic
 4. **Check `plans/`** to understand current priorities and leader directives
-5. **Consult `skills/`** for PG extension development patterns before writing C code
 
 ### Code Rules
 
-6. **Target: PostgreSQL 15** - all C code must be compatible with PG15 APIs
-7. **Extension language: C** - the SAQO extension is a native PG C extension
-8. **Python is offline only** - the `sensate` package runs offline for W2V training, never at query time
-9. **No runtime ML frameworks** - embeddings are pre-loaded as a PG table (`token_embeddings`), lookup only
-10. **Build system**: standard PG extension Makefile (`PGXS`)
-11. **Test with**: `make check` in the extension directory, plus `src/scripts/04-test-node-context.sh`
+5. **Target: PostgreSQL 15** - all C code must be compatible with PG15 APIs
+6. **Extension language: C** - the SAQO extension is a native PG C extension
+7. **Python is offline only** - the `sensate` package runs offline for W2V training, never at query time
+8. **No runtime ML frameworks** - embeddings are pre-loaded as a PG table (`token_embeddings`), lookup only
+9. **Build system**: standard PG extension Makefile (`PGXS`)
+10. **Test with**: `make check` in the extension directory, plus `src/scripts/04-test-node-context.sh`
 
 ### Development Workflow
 
-12. **Recompile after changes**:
+11. **Recompile after changes**:
     ```bash
     cd src/scripts
     bash 03-recompile-extensions.sh --quick   # AQO only
     bash 03-recompile-extensions.sh            # Full PG + AQO
     ```
-13. **Run tests**:
+12. **Run tests**:
     ```bash
     cd src/postgresql-15.15/contrib/aqo && make check
     bash src/scripts/04-test-node-context.sh
     ```
-14. **Server management**:
+13. **Server management**:
     ```bash
     sudo -u postgres /usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data start
     sudo -u postgres /usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data stop
@@ -97,10 +55,9 @@ graph TD
 
 ### Memory & Documentation Rules
 
-15. **Write a daily note** in `memories/` at the end of each significant work session using format `YYYY-MM-DD-<topic>.md`
-16. **Record key decisions** with rationale in memory notes - these are the team's institutional knowledge
-17. **Skills are reusable** - when you discover a non-obvious PG extension pattern, save it in `skills/`
-18. **Plans are read-only for the agent** - only the leader updates `plans/`; the agent reads and follows them
+14. **Write a daily note** in `memories/` at the end of each significant work session using format `YYYY-MM-DD-<topic>.md`
+15. **Record key decisions** with rationale in memory notes - these are the team's institutional knowledge
+16. **Plans are read-only for the agent** - only the leader updates `plans/`; the agent reads and follows them
 
 ## Key Architecture Quick Reference
 

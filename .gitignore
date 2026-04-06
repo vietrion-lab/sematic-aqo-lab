@@ -1,7 +1,6 @@
 # Ignore .env files but keep example
 *.env
 !.env.example
-.claude/
 .github/
 
 # Ignore compiled files
