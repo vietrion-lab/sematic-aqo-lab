@@ -87,6 +87,10 @@ fi
 echo "12. Analyze tables"
 $PSQL $DB -c "ANALYZE;"
 
+if [ "${SKIP_QUERY_SETUP:-0}" = "1" ]; then
+    echo "13-14. Skipping query copy/validation (SKIP_QUERY_SETUP=1)"
+else
+
 echo "13. Copy JOB queries"
 
 QUERY_DIR="$REPO_ROOT/experiment/job/queries"
@@ -173,6 +177,8 @@ fi
 echo ""
 echo "  Kept: $_valid | Skipped (error): $_err | Skipped (timeout): $_slow"
 echo "  Final query count: $(ls "$QUERY_DIR"/*.sql 2>/dev/null | wc -l)"
+
+fi # end SKIP_QUERY_SETUP guard
 
 echo ""
 echo "=================================="

@@ -151,6 +151,10 @@ echo "11. Analyze tables"
 
 $PSQL $DB -c "ANALYZE;"
 
+if [ "${SKIP_QUERY_SETUP:-0}" = "1" ]; then
+    echo "12-13. Skipping query generation/validation (SKIP_QUERY_SETUP=1)"
+else
+
 echo "12. Generate query seeds (all templates x 20 seeds)"
 
 QUERY_DIR="$REPO_ROOT/experiment/tpch/queries"
@@ -258,6 +262,8 @@ fi
 echo ""
 echo "  Kept: $_valid | Skipped (error): $_err | Skipped (timeout): $_slow"
 echo "  Final query count: $(ls "$QUERY_DIR"/*.sql 2>/dev/null | wc -l)"
+
+fi # end SKIP_QUERY_SETUP guard
 
 echo ""
 echo "=================================="

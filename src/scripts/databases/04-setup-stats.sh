@@ -49,6 +49,10 @@ $PSQL $DB -f "$WORK_DIR/scripts/sql/stats_index.sql"
 echo "8. Analyze tables"
 $PSQL $DB -c "ANALYZE;"
 
+if [ "${SKIP_QUERY_SETUP:-0}" = "1" ]; then
+    echo "9-10. Skipping query extraction/validation (SKIP_QUERY_SETUP=1)"
+else
+
 echo "9. Extract STATS-CEB queries"
 
 QUERY_DIR="$REPO_ROOT/experiment/stats/queries"
@@ -134,6 +138,8 @@ fi
 echo ""
 echo "  Kept: $_valid | Skipped (error): $_err | Skipped (timeout): $_slow"
 echo "  Final query count: $(ls "$QUERY_DIR"/*.sql 2>/dev/null | wc -l)"
+
+fi # end SKIP_QUERY_SETUP guard
 
 echo ""
 echo "=================================="
